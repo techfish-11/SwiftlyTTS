@@ -1,0 +1,8 @@
+discord.py
+python-dotenv
+asyncpg
+PyYAML
+aiohttp
+psutil
+voicevox-client
+PyNaCl
