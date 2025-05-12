@@ -27,6 +27,7 @@ class VoiceReadCog(commands.Cog):
         if interaction.user.voice:
             channel = interaction.user.voice.channel
             await channel.connect()
+            await channel.guild.change_voice_state(channel=channel, self_mute=False, self_deaf=True)
             # 記録する（テキストチャンネルはコマンド実行時のチャンネル）
             self.tts_channels[interaction.guild.id] = interaction.channel.id
             self.message_queues[interaction.guild.id] = asyncio.Queue()
