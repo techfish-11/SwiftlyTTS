@@ -255,5 +255,29 @@ class VoiceReadCog(commands.Cog):
                 self.tts_channels.pop(guild_id, None)
                 self.message_queues.pop(guild_id, None)
 
+        # ライブ配信開始を検知
+        if before.self_stream is False and after.self_stream is True:
+            guild_id = member.guild.id
+            if guild_id in self.tts_channels:
+                text = f"{member.display_name}がライブ配信を開始しました"
+                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
+                await queue.put(discord.Object(id=0, content=text))  # 仮のメッセージオブジェクトをキューに追加
+
+        # メンバーがボイスチャンネルに参加した場合
+        if not before.channel and after.channel:
+            guild_id = member.guild.id
+            if guild_id in self.tts_channels:
+                text = f"{member.display_name}が参加しました"
+                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
+                await queue.put(discord.Object(id=0, content=text))  # 仮のメッセージオブジェクトをキューに追加
+
+        # メンバーがボイスチャンネルから退出した場合
+        if before.channel and not after.channel:
+            guild_id = member.guild.id
+            if guild_id in self.tts_channels:
+                text = f"{member.display_name}が退出しました"
+                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
+                await queue.put(discord.Object(id=0, content=text))  # 仮のメッセージオブジェクトをキューに追加
+
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
