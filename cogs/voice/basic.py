@@ -140,17 +140,14 @@ class VoiceReadCog(commands.Cog):
             queue = self.message_queues.get(guild_id)
             if not queue:
                 break  # キューが存在しない場合は終了
-            message = await queue.get()
+            text = await queue.get()  # キューからテキストを取得
             voice_client = guild.voice_client
             # ボイスチャンネル未接続の場合はスキップ
             if not voice_client or not voice_client.is_connected():
                 continue
             try:
-                # ここでmessageがstrかdiscord.Messageか判定
-                if isinstance(message, str):
-                    text = await self.apply_dictionary(message)
-                else:
-                    text = await self.apply_dictionary(message.content)
+                # テキストを辞書で変換
+                text = await self.apply_dictionary(text)
                 wav_bytes = await self.voicelib.synthesize_bytes(text, self.speaker_id)
             except Exception:
                 continue
@@ -170,7 +167,7 @@ class VoiceReadCog(commands.Cog):
         # キューが存在する場合、メッセージ本文をキューに追加
         if message.guild.id in self.message_queues:
             queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
-            await queue.put(message.content)
+            await queue.put(message.content)  # メッセージ本文（str型）をキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
