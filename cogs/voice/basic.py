@@ -146,7 +146,11 @@ class VoiceReadCog(commands.Cog):
             if not voice_client or not voice_client.is_connected():
                 continue
             try:
-                text = await self.apply_dictionary(message.content)
+                # ここでmessageがstrかdiscord.Messageか判定
+                if isinstance(message, str):
+                    text = await self.apply_dictionary(message)
+                else:
+                    text = await self.apply_dictionary(message.content)
                 wav_bytes = await self.voicelib.synthesize_bytes(text, self.speaker_id)
             except Exception:
                 continue
