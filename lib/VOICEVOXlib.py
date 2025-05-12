@@ -4,7 +4,7 @@ import io
 import asyncio
 
 class VOICEVOXLib:
-    def __init__(self, base_url="http://192.168.1.107:50021"):
+    def __init__(self, base_url="http://192.168.1.11:50021"):
         self.base_url = base_url
 
     async def get_speakers(self):
