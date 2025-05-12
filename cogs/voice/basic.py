@@ -241,5 +241,19 @@ class VoiceReadCog(commands.Cog):
             text = text.replace(row['key'], row['value'])
         return text
 
+    @commands.Cog.listener()
+    async def on_voice_state_update(self, member, before, after):
+        # Botがボイスチャンネルに接続している場合のみ処理
+        for guild_id, voice_client in [(g.id, g.voice_client) for g in self.bot.guilds if g.voice_client]:
+            if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
+                # ボイスチャンネルにBotしかいない場合
+                await voice_client.disconnect()
+                # キュー・タスク等をリセット
+                if guild_id in self.queue_tasks:
+                    self.queue_tasks[guild_id].cancel()
+                    del self.queue_tasks[guild_id]
+                self.tts_channels.pop(guild_id, None)
+                self.message_queues.pop(guild_id, None)
+
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
