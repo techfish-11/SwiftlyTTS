@@ -30,7 +30,7 @@ async def update_rpc_task():
                 name=f"{guild_count} servers | {vc_count} VCs | {latency}ms"
             )
         )
-        await asyncio.sleep(60)
+        await asyncio.sleep(15)
 
 @bot.event
 async def on_ready():
