@@ -236,9 +236,19 @@ class VoiceReadCog(commands.Cog):
 
     async def apply_dictionary(self, text: str) -> str:
         """辞書を適用してテキストを変換"""
+        # メンションを「あっと<名前>」に置き換え
+        for user_id in set(discord.utils.find_mentions(text)):
+            user = await self.bot.fetch_user(user_id)
+            if user:
+                text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
+                text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")  # ニックネーム形式も対応
+
         rows = await self.db.fetch("SELECT key, value FROM dictionary")
         for row in rows:
             text = text.replace(row['key'], row['value'])
+        # 70文字以上の場合、省略
+        if len(text) > 70:
+            text = text[:70] + "省略"
         return text
 
     @commands.Cog.listener()
