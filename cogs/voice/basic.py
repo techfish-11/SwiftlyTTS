@@ -2,9 +2,25 @@ import discord
 from discord.ext import commands
 import asyncio
 import os
+import subprocess
+import io
 from lib.VOICEVOXlib import VOICEVOXLib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
+
+# 追加: メモリ上の音声データ再生用のAudioSource
+class MemoryAudio(discord.AudioSource):
+    def __init__(self, wav_bytes):
+        self.process = subprocess.Popen(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", "s16le", "-ar", "48000", "-ac", "2", "pipe:1"],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE
+        )
+        self.process.stdin.write(wav_bytes)
+        self.process.stdin.close()
+    def read(self):
+        return self.process.stdout.read(3840)  # バッファサイズ（適宜調整）
+    def is_opus(self):
+        return False
 
 class VoiceReadCog(commands.Cog):
     def __init__(self, bot):
@@ -98,18 +114,18 @@ class VoiceReadCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
-        tmp_wav = f"tmp_{interaction.id}.wav"
         await interaction.response.defer()
         # テキストを辞書で変換
         text = await self.apply_dictionary(text)
-        await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
-        audio_source = discord.FFmpegPCMAudio(tmp_wav)
+        try:
+            wav_bytes = await self.voicelib.synthesize_bytes(text, self.speaker_id)
+        except Exception:
+            return
+        audio_source = MemoryAudio(wav_bytes)
         if not voice_client.is_playing():
             voice_client.play(audio_source)
             while voice_client.is_playing():
                 await asyncio.sleep(0.5)
-        if os.path.exists(tmp_wav):
-            os.remove(tmp_wav)
         embed = discord.Embed(
             title="再生完了",
             description="テキストの読み上げが完了しました。\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
@@ -129,21 +145,16 @@ class VoiceReadCog(commands.Cog):
             # ボイスチャンネル未接続の場合はスキップ
             if not voice_client or not voice_client.is_connected():
                 continue
-            tmp_wav = f"tmp_{guild_id}_{message.id}.wav"
             try:
-                # メッセージ内容を辞書で変換
                 text = await self.apply_dictionary(message.content)
-                # メッセージ内容を合成
-                await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
+                wav_bytes = await self.voicelib.synthesize_bytes(text, self.speaker_id)
             except Exception:
                 continue
-            audio_source = discord.FFmpegPCMAudio(tmp_wav)
+            audio_source = MemoryAudio(wav_bytes)
             if not voice_client.is_playing():
                 voice_client.play(audio_source)
                 while voice_client.is_playing():
                     await asyncio.sleep(0.5)
-            if os.path.exists(tmp_wav):
-                os.remove(tmp_wav)
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
 
     @commands.Cog.listener()
