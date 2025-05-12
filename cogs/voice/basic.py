@@ -167,10 +167,12 @@ class VoiceReadCog(commands.Cog):
         # BotやDMは無視
         if message.author.bot or not message.guild:
             return
-        # 登録済みテキストチャンネルで送信されたときのみ
-        if self.tts_channels.get(message.guild.id) == message.channel.id:
+        # キューが存在する場合、メッセージ本文をキューに追加
+        if message.guild.id in self.message_queues:
             queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
-            await queue.put(message)
+            await queue.put(message.content)
+        # コマンドの処理も継続
+        await self.bot.process_commands(message)
 
     @app_commands.command(name="dictionary", description="読み上げ辞書を設定")
     async def dictionary(self, interaction: discord.Interaction, key: str, value: str):
