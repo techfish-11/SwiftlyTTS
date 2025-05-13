@@ -63,6 +63,14 @@ class PostgresDB:
         async with self._pool.acquire() as connection:
             return await connection.fetchrow(query, *args)
 
+    async def fetch_column(self, query: str, *args) -> List:
+        """Execute a SELECT query and return the first column of each row as a list"""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            records = await connection.fetch(query, *args)
+            return [record[0] for record in records]
+
     async def execute(self, query: str, *args) -> str:
         """Execute an INSERT, UPDATE, or DELETE query"""
         if not self._pool:
