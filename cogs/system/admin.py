@@ -35,14 +35,14 @@ class AdminCog(commands.Cog):
             for cog in self.bot.cogs.values():
                 if hasattr(cog, "banlist"):
                     cog.banlist.add(value)
-            await interaction.response.send_message(f"ユーザーID {value} をBANしました。")
+            await interaction.response.send_message(f"ユーザーID {value} をBANしました。", ephemeral=True)
         elif option == "unban":
             await self.db.execute("DELETE FROM banlist WHERE user_id = $1", value)
             # BANリストキャッシュを更新
             for cog in self.bot.cogs.values():
                 if hasattr(cog, "banlist"):
                     cog.banlist.discard(value)
-            await interaction.response.send_message(f"ユーザーID {value} のBANを解除しました。")
+            await interaction.response.send_message(f"ユーザーID {value} のBANを解除しました。", ephemeral=True)
         else:
             await interaction.response.send_message("無効なオプションです。'ban' または 'unban' を指定してください。", ephemeral=True)
 
