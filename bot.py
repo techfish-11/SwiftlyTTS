@@ -30,6 +30,7 @@ async def update_rpc_task():
                 name=f"/join | {guild_count} servers | {vc_count} VCs | {latency}ms"
             )
         )
+        await asyncio.sleep(10)  # 10秒ごとに更新するように変更
 
 @bot.event
 async def on_ready():
