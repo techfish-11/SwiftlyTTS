@@ -245,7 +245,7 @@ class VoiceReadCog(commands.Cog):
     @app_commands.command(name="dictionary-search", description="読み上げ辞書を検索")
     async def dictionary_search(self, interaction: discord.Interaction, key: str):
         if await self.is_banned(interaction.user.id):
-            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
             row = await self.db.fetchrow("SELECT value, author_id FROM dictionary WHERE key = $1", key)
