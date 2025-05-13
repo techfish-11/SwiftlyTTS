@@ -16,9 +16,15 @@ class AdminCog(commands.Cog):
 
     @app_commands.command(name="admin", description="管理者コマンド")
     @app_commands.describe(option="実行する操作", value="操作対象")
-    async def admin_command(self, interaction: discord.Interaction, option: str, value: int):
+    async def admin_command(self, interaction: discord.Interaction, option: str, value: str):
         if not await self.is_admin(interaction):
             await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
+
+        try:
+            value = int(value)
+        except ValueError:
+            await interaction.response.send_message("ユーザーIDは整数で指定してください。", ephemeral=True)
             return
 
         if option == "ban":
