@@ -182,6 +182,10 @@ class VoiceReadCog(commands.Cog):
         # BotやDMは無視
         if message.author.bot or not message.guild:
             return
+        # joinコマンドが実行されたチャンネルか確認
+        tts_channel_id = self.tts_channels.get(message.guild.id)
+        if tts_channel_id != message.channel.id:
+            return  # 違うチャンネルの場合は無視
         # キューが存在しない場合は初期化
         queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
         # キューにメッセージを追加
