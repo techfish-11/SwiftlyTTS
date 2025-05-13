@@ -6,6 +6,7 @@ import subprocess
 from lib.VOICEVOXlib import VOICEVOXLib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
+import uuid
 
 class VoiceReadCog(commands.Cog):
     def __init__(self, bot):
@@ -16,12 +17,20 @@ class VoiceReadCog(commands.Cog):
         self.message_queues = {}    # {guild.id: asyncio.Queue}
         self.queue_tasks = {}       # {guild.id: Task}
         self.db = PostgresDB()  # データベースインスタンスを初期化
+        self.cleanup_task = None  # 定期的なクリーンアップタスク
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
+        self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
 
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
+        if self.cleanup_task:
+            self.cleanup_task.cancel()
+            try:
+                await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
 
     @app_commands.command(name="join", description="ボイスチャンネルに参加")
     async def join(self, interaction: discord.Interaction):
@@ -36,7 +45,7 @@ class VoiceReadCog(commands.Cog):
             
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
-                tmp_wav = f"tmp_{interaction.id}_join.wav"
+                tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用
                 await self.voicelib.synthesize("接続しました。", self.speaker_id, tmp_wav)
                 voice_client = interaction.guild.voice_client
                 if voice_client and not voice_client.is_playing():
@@ -103,7 +112,7 @@ class VoiceReadCog(commands.Cog):
         # テキストを辞書で変換
         text = await self.apply_dictionary(text)
         try:
-            tmp_wav = f"tmp/tmp_{interaction.id}_read.wav"
+            tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用
             await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
         except Exception:
             return
@@ -124,30 +133,31 @@ class VoiceReadCog(commands.Cog):
     async def process_queue(self, guild_id):
         """サーバーごとの読み上げキューを処理"""
         guild = self.bot.get_guild(guild_id)
+        queue = self.message_queues.get(guild_id)
+        if not queue:
+            return  # キューが存在しない場合は終了
         while True:
-            queue = self.message_queues.get(guild_id)
-            if not queue:
-                break  # キューが存在しない場合は終了
-            text = await queue.get()  # キューからテキストを取得
-            voice_client = guild.voice_client
-            # ボイスチャンネル未接続の場合はスキップ
-            if not voice_client or not voice_client.is_connected():
-                # ボイスチャンネル未接続の場合はスキップ
-                continue
             try:
+                text = await queue.get()  # キューからテキストを取得
+                voice_client = guild.voice_client
+                # ボイスチャンネル未接続の場合はスキップ
+                if not voice_client or not voice_client.is_connected():
+                    continue
                 # テキストを辞書で変換
                 text = await self.apply_dictionary(text)
-                tmp_wav = f"tmp_{guild_id}_queue.wav"
+                tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
                 await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
-            except Exception as e:
-                continue
-            if not voice_client.is_playing():
-                audio_source = discord.FFmpegPCMAudio(tmp_wav)
-                voice_client.play(audio_source)
-                while voice_client.is_playing():
-                    await asyncio.sleep(0.5)
+                if not voice_client.is_playing():
+                    audio_source = discord.FFmpegPCMAudio(tmp_wav)
+                    voice_client.play(audio_source)
+                    while voice_client.is_playing():
+                        await asyncio.sleep(0.5)
                 if os.path.exists(tmp_wav):
                     os.remove(tmp_wav)
+            except asyncio.CancelledError:
+                break  # タスクがキャンセルされた場合は終了
+            except Exception as e:
+                continue  # その他のエラーは無視して次のメッセージへ
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
 
     @commands.Cog.listener()
@@ -156,10 +166,10 @@ class VoiceReadCog(commands.Cog):
         # BotやDMは無視
         if message.author.bot or not message.guild:
             return
-        # キューが存在する場合、メッセージ本文をキューに追加
-        if message.guild.id in self.message_queues:
-            queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
-            await queue.put(message.content)  # メッセージ本文（str型）をキューに追加
+        # キューが存在しない場合は初期化
+        queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
+        # キューにメッセージを追加
+        await queue.put(message.content)  # メッセージ本文（str型）をキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -242,13 +252,14 @@ class VoiceReadCog(commands.Cog):
 
     async def apply_dictionary(self, text: str) -> str:
         """辞書を適用してテキストを変換"""
-        # メンションを「あっと<名前>」に置き換え
-        for user_id in set(m.id for m in discord.utils.get(self.bot.cached_messages, content=text).mentions):
-            user = await self.bot.fetch_user(user_id)
-            if user:
-                text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
-                text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")  # ニックネーム形式も対応
-
+        # キャッシュメッセージから該当するものを取得し、存在すればメンション変換を行う
+        msg = discord.utils.get(self.bot.cached_messages, content=text)
+        if msg:
+            for user_id in {m.id for m in msg.mentions}:
+                user = await self.bot.fetch_user(user_id)
+                if user:
+                    text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
+                    text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
         rows = await self.db.fetch("SELECT key, value FROM dictionary")
         for row in rows:
             text = text.replace(row['key'], row['value'])
@@ -258,42 +269,65 @@ class VoiceReadCog(commands.Cog):
         return text
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        # Botがボイスチャンネルに接続している場合のみ処理
-        for guild_id, voice_client in [(g.id, g.voice_client) for g in self.bot.guilds if g.voice_client]:
+    async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+        """ボイスチャンネルの状態変化を監視"""
+        try:
+            guild = member.guild
+            voice_client = guild.voice_client
+
+            # ボットのみになった場合は切断
             if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
-                # ボイスチャンネルにBotしかいない場合
                 await voice_client.disconnect()
-                # キュー・タスク等をリセット
-                if guild_id in self.queue_tasks:
-                    self.queue_tasks[guild_id].cancel()
-                    del self.queue_tasks[guild_id]
-                self.tts_channels.pop(guild_id, None)
-                self.message_queues.pop(guild_id, None)
+                if guild.id in self.queue_tasks:
+                    self.queue_tasks[guild.id].cancel()
+                    del self.queue_tasks[guild.id]
+                self.tts_channels.pop(guild.id, None)
+                self.message_queues.pop(guild.id, None)
+                return
 
-        # ライブ配信開始を検知
-        if before.self_stream is False and after.self_stream is True:
-            guild_id = member.guild.id
-            if guild_id in self.tts_channels:
-                text = f"{member.display_name}がライブ配信を開始しました"
-                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
-                await queue.put(text)  # テキストを直接キューに追加
+            # ボイスチャンネル未接続の場合の処理や接続チェック
+            # 参加・退出時にTTSを再生
+            if before.channel is None and after.channel is not None:
+                msg = f"{member.display_name}が参加しました。"
+            elif before.channel is not None and after.channel is None:
+                msg = f"{member.display_name}が退出しました。"
+            else:
+                return
 
-        # メンバーがボイスチャンネルに参加した場合
-        if not before.channel and after.channel:
-            guild_id = member.guild.id
-            if guild_id in self.tts_channels:
-                text = f"{member.display_name}が参加しました"
-                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
-                await queue.put(text)  # テキストを直接キューに追加
+            if not voice_client or not voice_client.is_connected():
+                return
 
-        # メンバーがボイスチャンネルから退出した場合
-        if before.channel and not after.channel:
-            guild_id = member.guild.id
-            if guild_id in self.tts_channels:
-                text = f"{member.display_name}が退出しました"
-                queue = self.message_queues.setdefault(guild_id, asyncio.Queue())
-                await queue.put(text)  # テキストを直接キューに追加
+            # メッセージをキューに追加（str型で追加）
+            queue = self.message_queues.setdefault(guild.id, asyncio.Queue())
+            await queue.put(str(msg))
+            print(f"Added to queue: {msg}")
+            # ここでプロセスタスクが存在しなければ作成する
+            if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
+                self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+
+        except Exception as e:
+            print(f"Error in on_voice_state_update: {e}")
+
+    async def cleanup_temp_files(self):
+        """定期的に不要なwavファイルを削除"""
+        while True:
+            try:
+                temp_dir = "tmp"
+                if os.path.exists(temp_dir):
+                    for file in os.listdir(temp_dir):
+                        if file.endswith(".wav"):
+                            file_path = os.path.join(temp_dir, file)
+                            try:
+                                os.remove(file_path)
+                                print(f"Deleted temp file: {file_path}")
+                            except Exception as e:
+                                print(f"Failed to delete {file_path}: {e}")
+                await asyncio.sleep(3600)  # 1時間ごとに実行
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in cleanup_temp_files: {e}")
+                await asyncio.sleep(3600)
 
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
