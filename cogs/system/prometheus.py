@@ -13,7 +13,7 @@ class PrometheusCog(commands.Cog):
     def cog_unload(self):
         self.update_metrics.cancel()
 
-    @tasks.loop(seconds=10)
+    @tasks.loop(minutes=1)
     async def update_metrics(self):
         vc_count = len(self.bot.voice_clients) if self.bot.voice_clients else 0
         server_count = len(self.bot.guilds)
