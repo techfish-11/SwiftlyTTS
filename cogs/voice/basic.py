@@ -22,6 +22,7 @@ class VoiceReadCog(commands.Cog):
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
+        self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
 
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
@@ -32,8 +33,15 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 pass
 
+    async def is_banned(self, user_id: int) -> bool:
+        """ユーザーがBANされているか確認"""
+        return user_id in self.banlist
+
     @app_commands.command(name="join", description="ボイスチャンネルに参加")
     async def join(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
         if interaction.user.voice:
             channel = interaction.user.voice.channel
             await channel.connect()
@@ -75,6 +83,9 @@ class VoiceReadCog(commands.Cog):
 
     @app_commands.command(name="leave", description="ボイスチャンネルから退出")
     async def leave(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
         if interaction.guild.voice_client:
             await interaction.guild.voice_client.disconnect()
             # キュー・タスク等をリセット
@@ -99,6 +110,9 @@ class VoiceReadCog(commands.Cog):
 
     @app_commands.command(name="read", description="テキストを合成して読み上げる")
     async def read(self, interaction: discord.Interaction, text: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
         voice_client = interaction.guild.voice_client
         if not voice_client or not voice_client.is_connected():
             embed = discord.Embed(
@@ -163,6 +177,8 @@ class VoiceReadCog(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message):
         """メッセージを読み上げキューに追加"""
+        if await self.is_banned(message.author.id):
+            return  # BANされたユーザーのメッセージは無視
         # BotやDMは無視
         if message.author.bot or not message.guild:
             return
@@ -175,6 +191,9 @@ class VoiceReadCog(commands.Cog):
 
     @app_commands.command(name="dictionary", description="読み上げ辞書を設定")
     async def dictionary(self, interaction: discord.Interaction, key: str, value: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
         try:
             author_id = interaction.user.id  # 登録者のユーザーIDを取得
             await self.db.execute(
@@ -197,6 +216,9 @@ class VoiceReadCog(commands.Cog):
 
     @app_commands.command(name="dictionary-remove", description="読み上げ辞書を削除")
     async def dictionary_remove(self, interaction: discord.Interaction, key: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
         try:
             result = await self.db.execute("DELETE FROM dictionary WHERE key = $1", key)
             if result == "DELETE 1":
@@ -222,6 +244,9 @@ class VoiceReadCog(commands.Cog):
 
     @app_commands.command(name="dictionary-search", description="読み上げ辞書を検索")
     async def dictionary_search(self, interaction: discord.Interaction, key: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
         try:
             row = await self.db.fetchrow("SELECT value, author_id FROM dictionary WHERE key = $1", key)
             if row:

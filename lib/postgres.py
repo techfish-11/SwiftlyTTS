@@ -37,7 +37,10 @@ class PostgresDB:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
                     author_id BIGINT NOT NULL
-                )
+                );
+                CREATE TABLE IF NOT EXISTS banlist (
+                    user_id BIGINT PRIMARY KEY
+                );
             """)
 
     async def close(self) -> None:
