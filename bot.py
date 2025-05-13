@@ -27,10 +27,9 @@ async def update_rpc_task():
         await bot.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name=f"{guild_count} servers | {vc_count} VCs | {latency}ms"
+                name=f"/join | {guild_count} servers | {vc_count} VCs | {latency}ms"
             )
         )
-        await asyncio.sleep(15)
 
 @bot.event
 async def on_ready():
