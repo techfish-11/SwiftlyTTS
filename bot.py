@@ -15,7 +15,11 @@ with open("config.yml", "r", encoding="utf-8") as f:
 
 intents = discord.Intents.default()
 intents.message_content = True
-bot = commands.Bot(command_prefix=config["prefix"], intents=intents)
+bot = commands.AutoShardedBot(
+    command_prefix=config["prefix"],
+    shard_count=3,
+    intents=intents
+)
 
 db = PostgresDB()  # データベースクラスのインスタンスを作成
 
