@@ -7,6 +7,7 @@ from lib.VOICEVOXlib import VOICEVOXLib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import uuid
+import re
 
 class VoiceReadCog(commands.Cog):
     def __init__(self, bot):
@@ -188,8 +189,17 @@ class VoiceReadCog(commands.Cog):
             return  # 違うチャンネルの場合は無視
         # キューが存在しない場合は初期化
         queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
-        # キューにメッセージを追加
-        await queue.put(message.content)  # メッセージ本文（str型）をキューに追加
+        # 添付画像の枚数をカウント
+        image_count = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
+        # 読み上げテキストを決定
+        if image_count > 0:
+            if image_count == 1:
+                tts_text = "1枚の画像"
+            else:
+                tts_text = f"{image_count}枚の画像"
+        else:
+            tts_text = message.content  # メッセージ本文（str型）をキューに追加
+        await queue.put(tts_text)
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -289,6 +299,8 @@ class VoiceReadCog(commands.Cog):
                 if user:
                     text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
                     text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
+        # http/httpsリンクを「リンク省略」に変換
+        text = re.sub(r'https?://\S+', 'リンク省略', text)
         rows = await self.db.fetch("SELECT key, value FROM dictionary")
         for row in rows:
             text = text.replace(row['key'], row['value'])

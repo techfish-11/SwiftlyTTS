@@ -27,7 +27,7 @@ async def update_rpc_task():
     while True:
         guild_count = len(bot.guilds)
         latency = round(bot.latency * 1000)
-        vc_count = sum(1 for vc in bot.voice_clients if vc.is_connected())
+        vc_count = sum(1 for vc in bot.voice_clients if vc.is_connected() and vc.channel and len(vc.channel.members) > 0)
         await bot.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
