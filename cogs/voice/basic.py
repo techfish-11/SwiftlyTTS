@@ -299,6 +299,11 @@ class VoiceReadCog(commands.Cog):
                 if user:
                     text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
                     text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
+        # カスタム絵文字 <a:name:id> または <name:id> を「えもじ:名前」に変換
+        text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"えもじ:{m.group(1)}", text)
+        # スタンプ <:[a-zA-Z0-9_]+:\d+> も同様に「すたんぷ:名前」に変換
+        text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"すたんぷ:{m.group(1)}", text)
+        # Unicode絵文字はそのまま
         # http/httpsリンクを「リンク省略」に変換
         text = re.sub(r'https?://\S+', 'リンク省略', text)
         rows = await self.db.fetch("SELECT key, value FROM dictionary")
