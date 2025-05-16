@@ -219,7 +219,7 @@ class VoiceReadCog(commands.Cog):
                 description=f"辞書に追加しました: **{key}** -> **{value}**\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
                 color=discord.Color.green()
             )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=False)
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
@@ -247,7 +247,7 @@ class VoiceReadCog(commands.Cog):
                     description=f"指定されたキーが見つかりません: **{key}**",
                     color=discord.Color.red()
                 )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed, ephemeral=False)
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
