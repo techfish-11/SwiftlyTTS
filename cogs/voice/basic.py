@@ -25,6 +25,25 @@ class VoiceReadCog(commands.Cog):
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
         self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
 
+        # VC接続状態を復元
+        vc_states = await self.db.fetch("SELECT guild_id, channel_id FROM vc_state")
+        for state in vc_states:
+            guild = self.bot.get_guild(state['guild_id'])
+            channel = guild.get_channel(state['channel_id'])
+            if guild and channel:
+                # チャンネルに人がいない場合はスキップ
+                if not channel.members or all(member.bot for member in channel.members):
+                    print(f"Skipping reconnection to empty VC in guild {guild.id}")
+                    continue
+                try:
+                    await channel.connect()
+                    await guild.change_voice_state(channel=channel, self_mute=False, self_deaf=True)
+                    self.tts_channels[guild.id] = channel.id
+                    self.message_queues[guild.id] = asyncio.Queue()
+                    self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+                except Exception as e:
+                    print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
         if self.cleanup_task:
@@ -52,6 +71,12 @@ class VoiceReadCog(commands.Cog):
             self.message_queues[interaction.guild.id] = asyncio.Queue()
             self.queue_tasks[interaction.guild.id] = self.bot.loop.create_task(self.process_queue(interaction.guild.id))
             
+            # データベースにVC接続状態を保存
+            await self.db.execute(
+                "INSERT INTO vc_state (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2",
+                interaction.guild.id, channel.id
+            )
+
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
                 tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用
@@ -95,6 +120,8 @@ class VoiceReadCog(commands.Cog):
                 del self.queue_tasks[interaction.guild.id]
             self.tts_channels.pop(interaction.guild.id, None)
             self.message_queues.pop(interaction.guild.id, None)
+            # データベースからVC接続状態を削除
+            await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", interaction.guild.id)
             embed = discord.Embed(
                 title="退出完了",
                 description="ボイスチャンネルから退出しました。\nご利用ありがとうございました。\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
@@ -329,6 +356,8 @@ class VoiceReadCog(commands.Cog):
                     del self.queue_tasks[guild.id]
                 self.tts_channels.pop(guild.id, None)
                 self.message_queues.pop(guild.id, None)
+                # データベースからVC接続状態を削除
+                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                 return
 
             # ボイスチャンネル未接続の場合の処理や接続チェック

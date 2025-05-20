@@ -25,16 +25,32 @@ db = PostgresDB()  # データベースクラスのインスタンスを作成
 
 async def update_rpc_task():
     while True:
-        guild_count = len(bot.guilds)
-        latency = round(bot.latency * 1000)
-        vc_count = sum(1 for vc in bot.voice_clients if vc.is_connected() and vc.channel and len(vc.channel.members) > 0)
-        await bot.change_presence(
-            activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name=f"/join | {guild_count} servers | {vc_count} VCs | {latency}ms"
+        try:
+            guild_count = len(bot.guilds)
+            latency = round(bot.latency * 1000)
+            vc_count = sum(1 for vc in bot.voice_clients if vc.is_connected() and vc.channel and len(vc.channel.members) > 0)
+            await bot.change_presence(
+                activity=discord.Activity(
+                    type=discord.ActivityType.watching,
+                    name=f"/join | {guild_count} servers | {vc_count} VCs | {latency}ms"
+                )
             )
-        )
+        except Exception as e:
+            print(f"Error in update_rpc_task: {e}")
         await asyncio.sleep(10)  # 10秒ごとに更新するように変更
+
+async def restart_rpc_task():
+    while True:
+        try:
+            # 現在のタスクをキャンセルして再作成
+            for task in asyncio.all_tasks():
+                if task.get_name() == "update_rpc_task":
+                    task.cancel()
+                    break
+            bot.loop.create_task(update_rpc_task(), name="update_rpc_task")
+        except Exception as e:
+            print(f"Error in restart_rpc_task: {e}")
+        await asyncio.sleep(3600)  # 1時間ごとにタスクを再作成
 
 @bot.event
 async def on_ready():
@@ -51,7 +67,8 @@ async def on_ready():
         await bot.close()
         return
 
-    bot.loop.create_task(update_rpc_task())
+    bot.loop.create_task(update_rpc_task(), name="update_rpc_task")
+    bot.loop.create_task(restart_rpc_task(), name="restart_rpc_task")
 
     tasks = []
     for root, _, files in os.walk('./cogs'):

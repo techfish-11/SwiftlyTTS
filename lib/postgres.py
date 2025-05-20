@@ -41,6 +41,10 @@ class PostgresDB:
                 CREATE TABLE IF NOT EXISTS banlist (
                     user_id BIGINT PRIMARY KEY
                 );
+                CREATE TABLE IF NOT EXISTS vc_state (
+                    guild_id BIGINT PRIMARY KEY,
+                    channel_id BIGINT NOT NULL
+                );
             """)
 
     async def close(self) -> None:
