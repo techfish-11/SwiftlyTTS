@@ -43,7 +43,8 @@ class PostgresDB:
                 );
                 CREATE TABLE IF NOT EXISTS vc_state (
                     guild_id BIGINT PRIMARY KEY,
-                    channel_id BIGINT NOT NULL
+                    channel_id BIGINT NOT NULL,
+                    tts_channel_id BIGINT NOT NULL
                 );
             """)
 
