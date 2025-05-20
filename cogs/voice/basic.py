@@ -361,6 +361,19 @@ class VoiceReadCog(commands.Cog):
                 return
 
             # ボイスチャンネル未接続の場合の処理や接続チェック
+            if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
+                # ボットがVCから追放された場合
+                if member == guild.me:
+                    await voice_client.disconnect()
+                    if guild.id in self.queue_tasks:
+                        self.queue_tasks[guild.id].cancel()
+                        del self.queue_tasks[guild.id]
+                    self.tts_channels.pop(guild.id, None)
+                    self.message_queues.pop(guild.id, None)
+                    # データベースからVC接続状態を削除
+                    await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+                    return
+
             # 参加・退出時にTTSを再生
             if before.channel is None and after.channel is not None:
                 msg = f"{member.display_name}が参加しました。"
