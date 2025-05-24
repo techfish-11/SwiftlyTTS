@@ -80,9 +80,31 @@ class AdminCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
+        elif option == "warn":
+            parts = value.split(":", 1)
+            if len(parts) != 2:
+                await interaction.response.send_message("正しい形式は <userid>:<warn内容> です。", ephemeral=True)
+                return
+            try:
+                user_id = int(parts[0])
+            except ValueError:
+                await interaction.response.send_message("ユーザーIDは整数で指定してください。", ephemeral=True)
+                return
+            warn_message = parts[1].strip()
+            try:
+                user = await self.bot.fetch_user(user_id)
+                await user.send(f"警告: {warn_message}")
+            except discord.Forbidden:
+                await interaction.response.send_message("ユーザーにDMを送信できませんでした。", ephemeral=True)
+                return
+            except Exception:
+                await interaction.response.send_message("警告メッセージの送信中にエラーが発生しました。", ephemeral=True)
+                return
+            await interaction.response.send_message(f"ユーザーID {user_id} に警告を送信しました。", ephemeral=True)
+
         else:
             await interaction.response.send_message(
-                "無効なオプションです。'ban', 'unban', または 'voice' を指定してください。", ephemeral=True
+                "無効なオプションです。'ban', 'unban', 'voice', または 'warn' を指定してください。", ephemeral=True
             )
 
 async def setup(bot: commands.Bot):
