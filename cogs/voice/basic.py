@@ -8,6 +8,7 @@ from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import uuid
 import re
+from dotenv import load_dotenv  # dotenvをインポート
 
 class VoiceReadCog(commands.Cog):
     def __init__(self, bot):
@@ -19,11 +20,17 @@ class VoiceReadCog(commands.Cog):
         self.queue_tasks = {}       # {guild.id: Task}
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.cleanup_task = None  # 定期的なクリーンアップタスク
+        load_dotenv()  # .envファイルを読み込む
+        self.reconnect_enabled = os.getenv("RECONNECT", "true").lower() != "false"  # reconnect設定を取得
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
         self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
+
+        if not self.reconnect_enabled:
+            print("Reconnect is disabled. Skipping VC state restoration.")
+            return  # 再接続が無効の場合はスキップ
 
         # VC接続状態を復元
         vc_states = await self.db.fetch("SELECT guild_id, channel_id, tts_channel_id FROM vc_state")
@@ -173,6 +180,50 @@ class VoiceReadCog(commands.Cog):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="voice", description="読み上げる声を設定")
+    @app_commands.choices(
+        speaker=[
+            app_commands.Choice(name="四国めたん", value="四国めたん"),
+            app_commands.Choice(name="ずんだもん", value="ずんだもん"),
+            app_commands.Choice(name="春日部つむぎ", value="春日部つむぎ"),
+        ]
+    )
+    async def voice(self, interaction: discord.Interaction, speaker: app_commands.Choice[str]):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
+
+        speaker_map = {
+            "四国めたん": 0,
+            "ずんだもん": 1,
+            "春日部つむぎ": 2
+        }
+
+        speaker_id = speaker_map[speaker.value]
+        try:
+            await self.db.execute(
+                "INSERT INTO user_voice (user_id, speaker_id) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2",
+                interaction.user.id, speaker_id
+            )
+            embed = discord.Embed(
+                title="声の設定完了",
+                description=f"あなたの声を **{speaker.value}** に設定しました。",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def get_user_speaker_id(self, user_id: int) -> int:
+        """ユーザーのスピーカーIDを取得"""
+        row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
+        return row['speaker_id'] if row else self.speaker_id  # デフォルトはself.speaker_id
+
     async def process_queue(self, guild_id):
         """サーバーごとの読み上げキューを処理"""
         guild = self.bot.get_guild(guild_id)
@@ -181,7 +232,7 @@ class VoiceReadCog(commands.Cog):
             return  # キューが存在しない場合は終了
         while True:
             try:
-                text = await queue.get()  # キューからテキストを取得
+                text, speaker_id = await queue.get()  # キューからテキストとスピーカーIDを取得
                 voice_client = guild.voice_client
                 # ボイスチャンネル未接続の場合はスキップ
                 if not voice_client or not voice_client.is_connected():
@@ -189,7 +240,7 @@ class VoiceReadCog(commands.Cog):
                 # テキストを辞書で変換
                 text = await self.apply_dictionary(text)
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
-                await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
+                await self.voicelib.synthesize(text, speaker_id, tmp_wav)
                 if not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(tmp_wav)
                     voice_client.play(audio_source)
@@ -226,8 +277,11 @@ class VoiceReadCog(commands.Cog):
             else:
                 tts_text = f"{image_count}枚の画像"
         else:
-            tts_text = message.content  # メッセージ本文（str型）をキューに追加
-        await queue.put(tts_text)
+            tts_text = message.content  # メッセージ本文（str型）
+
+        # ユーザーのスピーカーIDを取得
+        speaker_id = await self.get_user_speaker_id(message.author.id)
+        await queue.put((tts_text, speaker_id))  # テキストとスピーカーIDをキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -251,7 +305,7 @@ class VoiceReadCog(commands.Cog):
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
-                description=f"エラーが発生しました: {e}",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -279,7 +333,7 @@ class VoiceReadCog(commands.Cog):
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
-                description=f"エラーが発生しました",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -312,7 +366,7 @@ class VoiceReadCog(commands.Cog):
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
-                description=f"エラーが発生しました",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -386,10 +440,9 @@ class VoiceReadCog(commands.Cog):
             if not voice_client or not voice_client.is_connected():
                 return
 
-            # メッセージをキューに追加（str型で追加）
+            # メッセージをキューに追加（システム音声はスピーカーIDを1に固定）
             queue = self.message_queues.setdefault(guild.id, asyncio.Queue())
-            await queue.put(str(msg))
-            print(f"Added to queue: {msg}")
+            await queue.put(f"{msg}")  # システム音声用
             # ここでプロセスタスクが存在しなければ作成する
             if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))

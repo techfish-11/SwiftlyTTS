@@ -46,6 +46,10 @@ class PostgresDB:
                     channel_id BIGINT NOT NULL,
                     tts_channel_id BIGINT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS user_voice (
+                    user_id BIGINT PRIMARY KEY,
+                    speaker_id INT NOT NULL
+                );
             """)
 
     async def close(self) -> None:
