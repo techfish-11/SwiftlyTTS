@@ -186,6 +186,7 @@ class VoiceReadCog(commands.Cog):
             app_commands.Choice(name="四国めたん", value="四国めたん"),
             app_commands.Choice(name="ずんだもん", value="ずんだもん"),
             app_commands.Choice(name="春日部つむぎ", value="春日部つむぎ"),
+            app_commands.Choice(name="白上虎太郎", value="白上虎太郎"),
         ]
     )
     async def voice(self, interaction: discord.Interaction, speaker: app_commands.Choice[str]):
@@ -196,7 +197,8 @@ class VoiceReadCog(commands.Cog):
         speaker_map = {
             "四国めたん": 0,
             "ずんだもん": 1,
-            "春日部つむぎ": 2
+            "春日部つむぎ": 2,
+            "白上虎太郎": 6
         }
 
         speaker_id = speaker_map[speaker.value]
