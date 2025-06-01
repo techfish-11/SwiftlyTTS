@@ -442,7 +442,7 @@ class VoiceReadCog(commands.Cog):
 
             # メッセージをキューに追加（システム音声はスピーカーIDを1に固定）
             queue = self.message_queues.setdefault(guild.id, asyncio.Queue())
-            await queue.put(f"{msg}")  # システム音声用
+            await queue.put((msg, self.speaker_id))  # システム音声用: (text, speaker_id)
             # ここでプロセスタスクが存在しなければ作成する
             if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
