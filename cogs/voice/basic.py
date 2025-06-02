@@ -102,7 +102,7 @@ class VoiceReadCog(commands.Cog):
 
             embed = discord.Embed(
                 title="接続完了",
-                description=f"{channel.name}に接続しました。\n\nこのbotは、[Swiftly](https://discord.com/oauth2/authorize?client_id=1310198598213963858)の派生botです。\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
+                description=f"{channel.name}に接続しました。\n\nこのbotは、[Swiftly](https://discord.com/oauth2/authorize?client_id=1310198598213963858)の派生botです。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Hosted by sakana11.org")
@@ -132,7 +132,7 @@ class VoiceReadCog(commands.Cog):
             await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", interaction.guild.id)
             embed = discord.Embed(
                 title="退出完了",
-                description="ボイスチャンネルから退出しました。\nご利用ありがとうございました。\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
+                description="ボイスチャンネルから退出しました。\nご利用ありがとうございました",
                 color=discord.Color.blue()
             )
             await interaction.response.send_message(embed=embed)
@@ -175,7 +175,7 @@ class VoiceReadCog(commands.Cog):
             os.remove(tmp_wav)
         embed = discord.Embed(
             title="再生完了",
-            description="テキストの読み上げが完了しました。\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
+            description="テキストの読み上げが完了しました。",
             color=discord.Color.green()
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -298,7 +298,7 @@ class VoiceReadCog(commands.Cog):
             )
             embed = discord.Embed(
                 title="辞書更新",
-                description=f"辞書に追加しました: **{key}** -> **{value}**\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
+                description=f"辞書に追加しました: **{key}** -> **{value}**",
                 color=discord.Color.green()
             )
             await interaction.response.send_message(embed=embed, ephemeral=False)
@@ -320,7 +320,7 @@ class VoiceReadCog(commands.Cog):
             if result == "DELETE 1":
                 embed = discord.Embed(
                     title="辞書削除",
-                    description=f"辞書から削除しました: **{key}**\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
+                    description=f"辞書から削除しました: **{key}**",
                     color=discord.Color.green()
                 )
             else:
@@ -353,7 +353,7 @@ class VoiceReadCog(commands.Cog):
                     description = f"**{key}** -> **{row['value']}**"
                 embed = discord.Embed(
                     title="辞書検索結果",
-                    description=f"{description}\n\n導入リンク: https://discord.com/oauth2/authorize?client_id=1371465579780767824",
+                    description=f"{description}",
                     color=discord.Color.green()
                 )
             else:
