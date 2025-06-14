@@ -35,18 +35,20 @@ bot = commands.AutoShardedBot(
 )
 
 # --- ここから同期的にコグを全ロード ---
-for root, _, files in os.walk('./cogs'):
-    for file in files:
-        if not file.endswith('.py'):
-            continue
-        ext = (
-            "cogs."
-            + os.path.relpath(os.path.join(root, file), "./cogs")
-                .replace(os.sep, ".")
-                .rsplit(".", 1)[0]
-        )
-        bot.load_extension(ext)
-print("All cogs loaded synchronously!")
+async def load_all_cogs():
+    for root, _, files in os.walk('./cogs'):
+        for file in files:
+            if not file.endswith('.py'):
+                continue
+            ext = (
+                "cogs."
+                + os.path.relpath(os.path.join(root, file), "./cogs")
+                    .replace(os.sep, ".")
+                    .rsplit(".", 1)[0]
+            )
+            await bot.load_extension(ext)  # 非同期でロード
+    print("All cogs loaded synchronously!")
+
 # --- ここまで ---
 
 db = PostgresDB()  # データベースクラスのインスタンスを作成
@@ -94,7 +96,8 @@ async def on_ready():
         await bot.close()
         return
 
-    # （コグロードは事前に済ませているためここでは不要）
+    # コグロードを非同期で実行
+    await load_all_cogs()
 
     # コマンド同期を非同期タスクとして実行
     bot.loop.create_task(bot.tree.sync())
