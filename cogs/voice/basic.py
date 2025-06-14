@@ -20,8 +20,10 @@ class VoiceReadCog(commands.Cog):
         self.queue_tasks = {}       # {guild.id: Task}
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.cleanup_task = None  # 定期的なクリーンアップタスク
+        self.monitor_task = None  # VC状態監視タスク
         load_dotenv()  # .envファイルを読み込む
         self.reconnect_enabled = os.getenv("RECONNECT", "true").lower() != "false"  # reconnect設定を取得
+        self.task_restart_interval = 1800  # タスク再作成間隔（秒）
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
@@ -52,12 +54,20 @@ class VoiceReadCog(commands.Cog):
                 except Exception as e:
                     print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
 
+        self.monitor_task = self.bot.loop.create_task(self.monitor_vc_state())
+
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
         if self.cleanup_task:
             self.cleanup_task.cancel()
             try:
                 await self.cleanup_task
+            except asyncio.CancelledError:
+                pass
+        if self.monitor_task:
+            self.monitor_task.cancel()
+            try:
+                await self.monitor_task
             except asyncio.CancelledError:
                 pass
 
@@ -452,6 +462,47 @@ class VoiceReadCog(commands.Cog):
 
         except Exception as e:
             print(f"Error in on_voice_state_update: {e}")
+
+    async def restart_monitor_task(self):
+        """30分ごとにmonitor_vc_stateタスクを作り直す"""
+        while True:
+            if self.monitor_task:
+                self.monitor_task.cancel()
+                try:
+                    await self.monitor_task
+                except asyncio.CancelledError:
+                    pass
+            self.monitor_task = self.bot.loop.create_task(self.monitor_vc_state())
+            await asyncio.sleep(self.task_restart_interval)
+
+    async def monitor_vc_state(self):
+        """定期的にvc_stateテーブルを確認し、必要に応じて再接続"""
+        while True:
+            try:
+                vc_states = await self.db.fetch("SELECT guild_id, channel_id, tts_channel_id FROM vc_state")
+                for state in vc_states:
+                    guild = self.bot.get_guild(state['guild_id'])
+                    if not guild:
+                        continue
+                    vc_channel = guild.get_channel(state['channel_id'])
+                    tts_channel = guild.get_channel(state['tts_channel_id'])
+                    if not vc_channel or not tts_channel:
+                        continue
+
+                    # VCに接続していない場合は再接続を試みる
+                    if not guild.voice_client or not guild.voice_client.is_connected():
+                        try:
+                            await vc_channel.connect()
+                            await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
+                            self.tts_channels[guild.id] = tts_channel.id
+                            self.message_queues[guild.id] = asyncio.Queue()
+                            self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+                            print(f"Reconnected to VC in guild {guild.id}")
+                        except Exception as e:
+                            print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+            except Exception as e:
+                print(f"Error in monitor_vc_state: {e}")
+            await asyncio.sleep(60)  # 60秒ごとにチェック
 
     async def cleanup_temp_files(self):
         """定期的に不要なwavファイルを削除"""
