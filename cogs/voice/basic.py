@@ -102,7 +102,7 @@ class VoiceReadCog(commands.Cog):
 
             embed = discord.Embed(
                 title="接続完了",
-                description=f"{channel.name}に接続しました。\n\nこのbotは、[Swiftly](https://discord.com/oauth2/authorize?client_id=1310198598213963858)の派生botです。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
+                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Hosted by sakana11.org")
