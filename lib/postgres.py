@@ -63,14 +63,16 @@ class PostgresDB:
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            return await connection.fetch(query, *args)
+            async with connection.transaction():  # トランザクションを追加
+                return await connection.fetch(query, *args)
 
     async def fetchrow(self, query: str, *args) -> Optional[asyncpg.Record]:
         """Execute a SELECT query and return a single row"""
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            return await connection.fetchrow(query, *args)
+            async with connection.transaction():  # トランザクションを追加
+                return await connection.fetchrow(query, *args)
 
     async def fetch_column(self, query: str, *args) -> List:
         """Execute a SELECT query and return the first column of each row as a list"""
@@ -85,14 +87,17 @@ class PostgresDB:
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            return await connection.execute(query, *args)
+            async with connection.transaction():  # トランザクションを追加
+                return await connection.execute(query, *args)
 
     async def executemany(self, query: str, args_list: List[tuple]) -> None:
         """Execute a query with multiple sets of arguments"""
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            await connection.executemany(query, args_list)
+            async with connection.transaction():  # トランザクションを追加
+                for batch in range(0, len(args_list), 100):  # バッチ処理を追加
+                    await connection.executemany(query, args_list[batch:batch + 100])
 
 
 # Example usage

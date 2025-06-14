@@ -7,3 +7,4 @@ psutil
 voicevox-client
 PyNaCl
 prometheus_client
+uvloop 

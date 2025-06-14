@@ -1,14 +1,27 @@
+import asyncio
+import sys
+if sys.platform == "win32":
+    # Windows 上ではselectorベースの高速なイベントループを明示的に設定
+    from asyncio import WindowsSelectorEventLoopPolicy
+    asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())
+else:
+    try:
+        import uvloop
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        pass
+
 import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-import asyncio
 import yaml
 from lib.postgres import PostgresDB  # PostgresDBクラスをインポート
 
 load_dotenv()
 
 TOKEN = os.getenv('DISCORD_TOKEN')
+SHARD_COUNT = int(os.getenv('SHARD_COUNT', 3))  # デフォルト値を3に設定
 
 with open("config.yml", "r", encoding="utf-8") as f:
     config = yaml.safe_load(f)
@@ -17,9 +30,24 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.AutoShardedBot(
     command_prefix=config["prefix"],
-    shard_count=3,
+    shard_count=SHARD_COUNT,  # 環境変数から取得したシャード数を使用
     intents=intents
 )
+
+# --- ここから同期的にコグを全ロード ---
+for root, _, files in os.walk('./cogs'):
+    for file in files:
+        if not file.endswith('.py'):
+            continue
+        ext = (
+            "cogs."
+            + os.path.relpath(os.path.join(root, file), "./cogs")
+                .replace(os.sep, ".")
+                .rsplit(".", 1)[0]
+        )
+        bot.load_extension(ext)
+print("All cogs loaded synchronously!")
+# --- ここまで ---
 
 db = PostgresDB()  # データベースクラスのインスタンスを作成
 
@@ -60,28 +88,20 @@ async def on_ready():
     print("Testing database connection...")
     try:
         await db.initialize()
-        
         print("Database connection successful!")
     except Exception as e:
         print(f"Database connection failed: {e}")
         await bot.close()
         return
 
+    # （コグロードは事前に済ませているためここでは不要）
+
+    # コマンド同期を非同期タスクとして実行
+    bot.loop.create_task(bot.tree.sync())
+    print("Commands syncing in background!")
+
+    # RPCタスクを遅延起動
     bot.loop.create_task(update_rpc_task(), name="update_rpc_task")
     bot.loop.create_task(restart_rpc_task(), name="restart_rpc_task")
-
-    tasks = []
-    for root, _, files in os.walk('./cogs'):
-        py_files = [file for file in files if file.endswith('.py')]
-        tasks.extend(
-            bot.load_extension(f'cogs.{os.path.relpath(os.path.join(root, file), "./cogs").replace(os.sep, ".").rsplit(".", 1)[0]}')
-            for file in py_files
-        )
-
-    await asyncio.gather(*tasks)
-
-    await bot.tree.sync()
-
-    print("All cogs loaded and commands synced!")
 
 bot.run(TOKEN)
