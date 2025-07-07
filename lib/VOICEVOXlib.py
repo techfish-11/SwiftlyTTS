@@ -12,6 +12,9 @@ class VOICEVOXLib:
     def __init__(self, base_url=None):
         if base_url is None:
             base_url = os.getenv("VOICEVOX_URL", "http://192.168.1.11:50021")
+            # Handle empty string case - use default if empty
+            if not base_url:
+                base_url = "http://192.168.1.11:50021"
         self.base_url = base_url
 
     async def get_speakers(self):
