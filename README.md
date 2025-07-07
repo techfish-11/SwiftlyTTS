@@ -72,7 +72,7 @@ VOICEVOX_URL=<VOICEVOXサーバーのURL (デフォルト: http://192.168.1.11:5
 
 [VOICEVOX_engineのrepo](https://github.com/VOICEVOX/voicevox_engine)を参照してください
 
-VOICEVOXサーバーのURLが`http://192.168.1.11:50021`以外の場合は、.envファイルで`VOICEVOX_URL`を設定してください。
+VOICEVOXサーバーのURLを指定する場合は、.envファイルで`VOICEVOX_URL`を設定してください。
 
 4. bot.pyを実行する
 ```
