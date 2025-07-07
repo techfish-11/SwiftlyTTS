@@ -66,21 +66,13 @@ DB_USER=<データベースのユーザー名>
 DB_PASSWORD=<データベースのパスワード>
 
 DISCORD_TOKEN=<Discord botのtoken>
+VOICEVOX_URL=<VOICEVOXサーバーのURL (デフォルト: http://192.168.1.11:50021)>
 ```
 3. VOICEVOXサーバーを立ち上げる
 
 [VOICEVOX_engineのrepo](https://github.com/VOICEVOX/voicevox_engine)を参照してください
 
-(必要に応じて`VOICEVOXlib.py`のIPアドレスなども変える)
-```python
-...
-
-class VOICEVOXLib:
-    def __init__(self, base_url="http://192.168.1.11:50021"):
-        self.base_url = base_url
-
-...
-```
+VOICEVOXサーバーのURLを指定する場合は、.envファイルで`VOICEVOX_URL`を設定してください。
 
 4. bot.pyを実行する
 ```
