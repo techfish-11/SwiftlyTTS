@@ -173,7 +173,10 @@ class VoiceReadCog(commands.Cog):
         text = await self.apply_dictionary(text)
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用
-            await self.voicelib.synthesize(text, self.speaker_id, tmp_wav)
+            speed = await self.db.get_server_voice_speed(interaction.guild.id)
+            if speed is None:
+                speed = 1.0
+            await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
         except Exception:
             return
         if not voice_client.is_playing():
@@ -229,6 +232,77 @@ class VoiceReadCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @app_commands.command(name="speed", description="サーバー全体の読み上げスピードを設定・確認・リセット")
+    async def speed(self, interaction: discord.Interaction, value: str = None):
+        if value is None:
+            speed = await self.db.get_server_voice_speed(interaction.guild.id)
+            if speed is not None:
+                desc = f"現在のサーバー全体の読み上げスピードは{speed}です。"
+            else:
+                desc = "サーバー全体の読み上げスピードは設定されていません（デフォルト値が使用されます）。"
+
+            class SpeedButtonView(discord.ui.View):
+                def __init__(self, parent, timeout=60):
+                    super().__init__(timeout=timeout)
+                    self.parent = parent
+
+                @discord.ui.button(label="1.0", style=discord.ButtonStyle.primary)
+                async def speed_1(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.set_speed(interaction2, 1.0)
+
+                @discord.ui.button(label="1.2", style=discord.ButtonStyle.primary)
+                async def speed_12(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.set_speed(interaction2, 1.2)
+
+                @discord.ui.button(label="1.5", style=discord.ButtonStyle.primary)
+                async def speed_15(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.set_speed(interaction2, 1.5)
+
+                @discord.ui.button(label="1.8", style=discord.ButtonStyle.primary)
+                async def speed_18(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.set_speed(interaction2, 1.8)
+
+                @discord.ui.button(label="2.0", style=discord.ButtonStyle.primary)
+                async def speed_20(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.set_speed(interaction2, 2.0)
+
+                @discord.ui.button(label="リセット", style=discord.ButtonStyle.danger)
+                async def reset(self, interaction2: discord.Interaction, button: discord.ui.Button):
+                    await self.parent.reset_speed(interaction2)
+
+            async def set_speed(self, interaction2, value):
+                await self.db.set_server_voice_speed(interaction2.guild.id, value)
+                await interaction2.response.send_message(f"サーバー全体の読み上げスピードを{value}に設定しました。", ephemeral=False)
+
+            async def reset_speed(self, interaction2):
+                await self.db.delete_server_voice_speed(interaction2.guild.id)
+                await interaction2.response.send_message("サーバー全体の読み上げスピード設定をリセットしました。", ephemeral=True)
+
+            self.set_speed = set_speed.__get__(self)
+            self.reset_speed = reset_speed.__get__(self)
+
+            embed = discord.Embed(
+                title="読み上げスピード設定",
+                description=desc + "\n\n下のボタンからスピードを選択してください。",
+                color=discord.Color.blue()
+            )
+            await interaction.response.send_message(embed=embed, view=SpeedButtonView(self), ephemeral=True)
+            return
+        if value.lower() == "reset":
+            await self.db.delete_server_voice_speed(interaction.guild.id)
+            await interaction.response.send_message("サーバー全体の読み上げスピード設定をリセットしました。", ephemeral=True)
+            return
+        try:
+            speed = float(value)
+        except ValueError:
+            await interaction.response.send_message("スピードは数値（1.0～2.0）または'reset'で指定してください。", ephemeral=True)
+            return
+        if not (1 <= speed <= 2.0):
+            await interaction.response.send_message("スピードは1.0～2.0の間で指定してください。", ephemeral=True)
+            return
+        await self.db.set_server_voice_speed(interaction.guild.id, speed)
+        await interaction.response.send_message(f"サーバー全体の読み上げスピードを{speed}に設定しました。", ephemeral=False)
+
     async def get_user_speaker_id(self, user_id: int) -> int:
         """ユーザーのスピーカーIDを取得"""
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
@@ -250,7 +324,10 @@ class VoiceReadCog(commands.Cog):
                 # テキストを辞書で変換
                 text = await self.apply_dictionary(text)
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
-                await self.voicelib.synthesize(text, speaker_id, tmp_wav)
+                speed = await self.db.get_server_voice_speed(guild_id)
+                if speed is None:
+                    speed = 1.0
+                await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
                 if not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(tmp_wav)
                     voice_client.play(audio_source)

@@ -50,6 +50,10 @@ class PostgresDB:
                     user_id BIGINT PRIMARY KEY,
                     speaker_id INT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS server_voice_speed (
+                    guild_id BIGINT PRIMARY KEY,
+                    speed FLOAT NOT NULL
+                );
             """)
 
     async def close(self) -> None:
@@ -99,6 +103,39 @@ class PostgresDB:
                 for batch in range(0, len(args_list), 100):  # バッチ処理を追加
                     await connection.executemany(query, args_list[batch:batch + 100])
 
+
+    async def get_server_voice_speed(self, guild_id: int) -> Optional[float]:
+        """Get the voice speed for a server (guild). Returns None if not set."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            row = await connection.fetchrow(
+                "SELECT speed FROM server_voice_speed WHERE guild_id = $1", guild_id
+            )
+            return row["speed"] if row else None
+
+    async def set_server_voice_speed(self, guild_id: int, speed: float) -> None:
+        """Set or update the voice speed for a server (guild)."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO server_voice_speed (guild_id, speed)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id) DO UPDATE SET speed = EXCLUDED.speed
+                """,
+                guild_id, speed
+            )
+
+    async def delete_server_voice_speed(self, guild_id: int) -> None:
+        """Delete the voice speed setting for a server (guild)."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                "DELETE FROM server_voice_speed WHERE guild_id = $1", guild_id
+            )
 
 # Example usage
 # db = PostgresDB()

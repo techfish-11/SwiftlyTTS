@@ -24,7 +24,7 @@ class VOICEVOXLib:
                 response.raise_for_status()
                 return await response.json()
 
-    async def synthesize(self, text, speaker_id, output_path):
+    async def synthesize(self, text, speaker_id, output_path, speed: float = 1.0):
         """
         Synthesize speech from text using the VOICEVOX engine.
 
@@ -32,6 +32,7 @@ class VOICEVOXLib:
             text (str): The text to synthesize.
             speaker_id (int): The ID of the speaker to use.
             output_path (str): Path to save the output WAV file.
+            speed (float): Speed of the synthesized voice (default 1.0).
         """
         async with aiohttp.ClientSession() as session:
             # Step 1: Generate audio query
@@ -41,6 +42,9 @@ class VOICEVOXLib:
             ) as query_response:
                 query_response.raise_for_status()
                 audio_query = await query_response.json()
+                # スピードを上書き
+                if "speedScale" in audio_query:
+                    audio_query["speedScale"] = speed
 
             # Step 2: Synthesize audio
             async with session.post(
