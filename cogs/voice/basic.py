@@ -38,8 +38,10 @@ class VoiceReadCog(commands.Cog):
         vc_states = await self.db.fetch("SELECT guild_id, channel_id, tts_channel_id FROM vc_state")
         for state in vc_states:
             guild = self.bot.get_guild(state['guild_id'])
-            vc_channel = guild.get_channel(state['channel_id'])
-            tts_channel = guild.get_channel(state['tts_channel_id'])
+            if guild is None:
+                continue
+            vc_channel = guild.get_channel(state['channel_id']) if guild else None
+            tts_channel = guild.get_channel(state['tts_channel_id']) if guild else None
             if guild and vc_channel and tts_channel:
                 # チャンネルに人がいない場合はスキップ
                 if not vc_channel.members or all(member.bot for member in vc_channel.members):
