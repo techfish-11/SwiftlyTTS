@@ -10,6 +10,43 @@ import uuid
 import re
 from dotenv import load_dotenv  # dotenvをインポート
 
+# 話者名とIDの紐付けリスト
+SPEAKER_LIST = [
+    {"name": "四国めたん", "id": 2},
+    {"name": "ずんだもん", "id": 3},
+    {"name": "春日部つむぎ", "id": 8},
+    {"name": "雨晴はう", "id": 10},
+    {"name": "波音リツ", "id": 9},
+    {"name": "玄野武宏", "id": 11},
+    {"name": "白上虎太郎", "id": 12},
+    {"name": "青山龍星", "id": 13},
+    {"name": "冥鳴ひまり", "id": 14},
+    {"name": "九州そら", "id": 16},
+    {"name": "もち子さん", "id": 20},
+    {"name": "剣崎雌雄", "id": 21},
+    {"name": "WhiteCUL", "id": 23},
+    {"name": "後鬼", "id": 27},
+    {"name": "No.7", "id": 29},
+    {"name": "ちび式じい", "id": 42},
+    {"name": "櫻歌ミコ", "id": 43},
+    {"name": "小夜/SAYO", "id": 46},
+    {"name": "ナースロボ＿タイプＴ", "id": 47},
+    {"name": "†聖騎士 紅桜†", "id": 51},
+    {"name": "雀松朱司", "id": 52},
+    {"name": "麒ヶ島宗麟", "id": 53},
+    {"name": "春歌ナナ", "id": 54},
+    {"name": "猫使アル", "id": 55},
+    {"name": "猫使ビィ", "id": 58},
+    {"name": "中国うさぎ", "id": 61},
+    {"name": "栗田まろん", "id": 67},
+    {"name": "あいえるたん", "id": 68},
+    {"name": "満別花丸", "id": 69},
+    {"name": "琴詠ニア", "id": 74},
+    {"name": "Voidoll", "id": 89},
+    {"name": "ぞん子", "id": 90},
+    {"name": "中部つるぎ", "id": 94}
+]
+
 class VoiceReadCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -202,43 +239,76 @@ class VoiceReadCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="voice", description="読み上げる声を設定")
-    @app_commands.choices(
-        speaker=[
-            app_commands.Choice(name="四国めたん", value="四国めたん"),
-            app_commands.Choice(name="ずんだもん", value="ずんだもん"),
-            app_commands.Choice(name="春日部つむぎ", value="春日部つむぎ"),
-        ]
-    )
-    async def voice(self, interaction: discord.Interaction, speaker: app_commands.Choice[str]):
+    async def voice(self, interaction: discord.Interaction):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
 
-        speaker_map = {
-            "四国めたん": 0,
-            "ずんだもん": 1,
-            "春日部つむぎ": 2,
-        }
+        cog = self  # クロージャ用
 
-        speaker_id = speaker_map[speaker.value]
-        try:
-            await self.db.execute(
-                "INSERT INTO user_voice (user_id, speaker_id) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2",
-                interaction.user.id, speaker_id
+        class SpeakerListView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=None)  # ← ここをNoneに
+                self.page = 0
+                self.per_page = 10
+                self.max_page = (len(SPEAKER_LIST)-1)//self.per_page
+
+            def get_embed(self):
+                start = self.page * self.per_page
+                items = SPEAKER_LIST[start:start+self.per_page]
+                desc = "\n".join(f"{i+start+1}. {item['name']}" for i, item in enumerate(items))
+                return discord.Embed(title="話者一覧", description=desc, color=discord.Color.blue())
+
+            @discord.ui.button(label="前へ", style=discord.ButtonStyle.secondary)
+            async def prev(self, button, inter: discord.Interaction):
+                if self.page > 0:
+                    self.page -= 1
+                    await inter.response.edit_message(embed=self.get_embed(), view=self)
+                else:
+                    await inter.response.defer()
+
+            @discord.ui.button(label="次へ", style=discord.ButtonStyle.secondary)
+            async def next(self, button, inter: discord.Interaction):
+                if self.page < self.max_page:
+                    self.page += 1
+                    await inter.response.edit_message(embed=self.get_embed(), view=self)
+                else:
+                    await inter.response.defer()
+
+            @discord.ui.button(label="設定", style=discord.ButtonStyle.primary)
+            async def select(self, interaction: discord.Interaction, button: discord.ui.Button):
+                await interaction.response.send_modal(VoiceSelectModal())
+
+        class VoiceSelectModal(discord.ui.Modal, title="話者を設定"):
+            speaker_number = discord.ui.TextInput(
+                label="番号を入力", placeholder="例: 1", required=True, max_length=3
             )
-            embed = discord.Embed(
-                title="声の設定完了",
-                description=f"あなたの声を **{speaker.value}** に設定しました。",
-                color=discord.Color.green()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=False)
-        except Exception as e:
-            embed = discord.Embed(
-                title="エラー",
-                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+            async def on_submit(self, inter: discord.Interaction):
+                try:
+                    num = int(self.speaker_number.value)
+                except:
+                    await inter.response.send_message("無効な番号です。", ephemeral=True)
+                    return
+                if not (1 <= num <= len(SPEAKER_LIST)):
+                    await inter.response.send_message("範囲外の番号です。", ephemeral=True)
+                    return
+                speaker_info = SPEAKER_LIST[num - 1]
+                speaker_id = speaker_info["id"]
+                # DBに保存
+                await cog.db.execute(
+                    "INSERT INTO user_voice (user_id, speaker_id) VALUES ($1,$2) "
+                    "ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2",
+                    inter.user.id, speaker_id
+                )
+                await inter.response.send_message(
+                    f"{inter.user.display_name}さんが声を {speaker_info['name']} (ID: {speaker_id}) に設定しました。", ephemeral=False
+                )
+
+        view = SpeakerListView()
+        await interaction.response.send_message(
+            embed=view.get_embed(), view=view, ephemeral=True
+        )
 
     @app_commands.command(name="speed", description="サーバー全体の読み上げスピードを設定・確認・リセット")
     async def speed(self, interaction: discord.Interaction, value: str = None):
