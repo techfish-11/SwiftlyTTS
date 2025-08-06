@@ -22,6 +22,7 @@ class VoiceReadCog(commands.Cog):
         self.cleanup_task = None  # 定期的なクリーンアップタスク
         self.monitor_task = None  # VC状態監視タスク
         load_dotenv()  # .envファイルを読み込む
+        self.debug_mode = os.getenv("DEBUG", "0") == "1"  # DEBUGモード判定
         self.reconnect_enabled = os.getenv("RECONNECT", "true").lower() != "false"  # reconnect設定を取得
         self.task_restart_interval = 1800  # タスク再作成間隔（秒）
 
@@ -29,6 +30,10 @@ class VoiceReadCog(commands.Cog):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
         self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
+
+        if self.debug_mode:
+            print("DEBUGモードのためVC状態復元をスキップします。")
+            return
 
         if not self.reconnect_enabled:
             print("Reconnect is disabled. Skipping VC state restoration.")
@@ -91,11 +96,12 @@ class VoiceReadCog(commands.Cog):
             self.message_queues[interaction.guild.id] = asyncio.Queue()
             self.queue_tasks[interaction.guild.id] = self.bot.loop.create_task(self.process_queue(interaction.guild.id))
             
-            # データベースにVC接続状態を保存
-            await self.db.execute(
-                "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
-                interaction.guild.id, channel.id, interaction.channel.id
-            )
+            # データベースにVC接続状態を保存（DEBUGモード時はスキップ）
+            if not self.debug_mode:
+                await self.db.execute(
+                    "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
+                    interaction.guild.id, channel.id, interaction.channel.id
+                )
 
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
