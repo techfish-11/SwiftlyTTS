@@ -260,20 +260,20 @@ class VoiceReadCog(commands.Cog):
                 return discord.Embed(title="話者一覧", description=desc, color=discord.Color.blue())
 
             @discord.ui.button(label="前へ", style=discord.ButtonStyle.secondary)
-            async def prev(self, button, inter: discord.Interaction):
+            async def prev(self, interaction: discord.Interaction, button: discord.ui.Button):
                 if self.page > 0:
                     self.page -= 1
-                    await inter.response.edit_message(embed=self.get_embed(), view=self)
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
                 else:
-                    await inter.response.defer()
+                    await interaction.response.defer()
 
             @discord.ui.button(label="次へ", style=discord.ButtonStyle.secondary)
-            async def next(self, button, inter: discord.Interaction):
+            async def next(self, interaction: discord.Interaction, button: discord.ui.Button):
                 if self.page < self.max_page:
                     self.page += 1
-                    await inter.response.edit_message(embed=self.get_embed(), view=self)
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
                 else:
-                    await inter.response.defer()
+                    await interaction.response.defer()
 
             @discord.ui.button(label="設定", style=discord.ButtonStyle.primary)
             async def select(self, interaction: discord.Interaction, button: discord.ui.Button):
