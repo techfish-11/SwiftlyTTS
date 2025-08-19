@@ -33,10 +33,12 @@ class PostgresDB:
         # 辞書テーブルを作成
         async with self._pool.acquire() as connection:
             await connection.execute("""
-                CREATE TABLE IF NOT EXISTS dictionary (
-                    key TEXT PRIMARY KEY,
+                CREATE TABLE IF NOT EXISTS dictionarynew (
+                    guild_id BIGINT NOT NULL,
+                    key TEXT NOT NULL,
                     value TEXT NOT NULL,
-                    author_id BIGINT NOT NULL
+                    author_id BIGINT NOT NULL,
+                    PRIMARY KEY (guild_id, key)
                 );
                 CREATE TABLE IF NOT EXISTS banlist (
                     user_id BIGINT PRIMARY KEY
@@ -136,6 +138,48 @@ class PostgresDB:
             await connection.execute(
                 "DELETE FROM server_voice_speed WHERE guild_id = $1", guild_id
             )
+
+    async def upsert_dictionary(self, guild_id: int, key: str, value: str, author_id: int) -> None:
+        """Insert or update a dictionary entry for a specific guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO dictionarynew (guild_id, key, value, author_id)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, key) DO UPDATE SET value = $3, author_id = $4
+                """,
+                guild_id, key, value, author_id
+            )
+
+    async def remove_dictionary(self, guild_id: int, key: str) -> str:
+        """Remove a dictionary entry for a specific guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.execute(
+                "DELETE FROM dictionarynew WHERE guild_id = $1 AND key = $2", guild_id, key
+            )
+
+    async def get_dictionary_entry(self, guild_id: int, key: str) -> Optional[asyncpg.Record]:
+        """Get a dictionary entry for a specific guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetchrow(
+                "SELECT value, author_id FROM dictionarynew WHERE guild_id = $1 AND key = $2", guild_id, key
+            )
+
+    async def get_all_dictionary(self, guild_id: int) -> List[asyncpg.Record]:
+        """Get all dictionary entries for a specific guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetch(
+                "SELECT key, value FROM dictionarynew WHERE guild_id = $1", guild_id
+            )
+
 
 # Example usage
 # db = PostgresDB()

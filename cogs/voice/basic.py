@@ -125,6 +125,9 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
             return
         if interaction.user.voice:
+            # 処理に時間がかかる可能性があるため Thinking を表示
+            await interaction.response.defer(thinking=True)
+
             channel = interaction.user.voice.channel
             await channel.connect()
             await channel.guild.change_voice_state(channel=channel, self_mute=False, self_deaf=True)
@@ -161,7 +164,8 @@ class VoiceReadCog(commands.Cog):
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Hosted by sakana11.org")
-            await interaction.response.send_message(embed=embed)
+            # defer しているので followup を使って送信
+            await interaction.followup.send(embed=embed)
         else:
             embed = discord.Embed(
                 title="エラー",
@@ -215,7 +219,7 @@ class VoiceReadCog(commands.Cog):
             return
         await interaction.response.defer()
         # テキストを辞書で変換
-        text = await self.apply_dictionary(text)
+        text = await self.apply_dictionary(text, interaction.guild.id)
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
@@ -400,7 +404,7 @@ class VoiceReadCog(commands.Cog):
                 if not voice_client or not voice_client.is_connected():
                     continue
                 # テキストを辞書で変換
-                text = await self.apply_dictionary(text)
+                text = await self.apply_dictionary(text, guild_id)
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
@@ -457,10 +461,8 @@ class VoiceReadCog(commands.Cog):
             return
         try:
             author_id = interaction.user.id  # 登録者のユーザーIDを取得
-            await self.db.execute(
-                "INSERT INTO dictionary (key, value, author_id) VALUES ($1, $2, $3) ON CONFLICT (key) DO UPDATE SET value = $2, author_id = $3",
-                key, value, author_id
-            )
+            guild_id = interaction.guild.id
+            await self.db.upsert_dictionary(guild_id, key, value, author_id)
             embed = discord.Embed(
                 title="辞書更新",
                 description=f"辞書に追加しました: **{key}** -> **{value}**",
@@ -481,7 +483,8 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            result = await self.db.execute("DELETE FROM dictionary WHERE key = $1", key)
+            guild_id = interaction.guild.id
+            result = await self.db.remove_dictionary(guild_id, key)
             if result == "DELETE 1":
                 embed = discord.Embed(
                     title="辞書削除",
@@ -509,7 +512,8 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            row = await self.db.fetchrow("SELECT value, author_id FROM dictionary WHERE key = $1", key)
+            guild_id = interaction.guild.id
+            row = await self.db.get_dictionary_entry(guild_id, key)
             if row:
                 author_id = row['author_id']
                 if interaction.user.id == 1241397634095120438:
@@ -536,9 +540,8 @@ class VoiceReadCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def apply_dictionary(self, text: str) -> str:
-        """辞書を適用してテキストを変換"""
-        # キャッシュメッセージから該当するものを取得し、存在すればメンション変換を行う
+    async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
+        """辞書を適用してテキストを変換（サーバーごと対応）"""
         msg = discord.utils.get(self.bot.cached_messages, content=text)
         if msg:
             for user_id in {m.id for m in msg.mentions}:
@@ -546,20 +549,19 @@ class VoiceReadCog(commands.Cog):
                 if user:
                     text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
                     text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
-                #ロールメンションも同様に変換
         for role in msg.role_mentions:
             text = text.replace(f"<@&{role.id}>", f"ろーる:{role.name}")
-        # カスタム絵文字 <a:name:id> または <name:id> を「えもじ:名前」に変換
         text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"えもじ:{m.group(1)}", text)
-        # スタンプ <:[a-zA-Z0-9_]+:\d+> も同様に「すたんぷ:名前」に変換
         text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"すたんぷ:{m.group(1)}", text)
-        # Unicode絵文字はそのまま
-        # http/httpsリンクを「リンク省略」に変換
         text = re.sub(r'https?://\S+', 'リンク省略', text)
-        rows = await self.db.fetch("SELECT key, value FROM dictionary")
-        for row in rows:
-            text = text.replace(row['key'], row['value'])
-        # 70文字以上の場合、省略
+        # guild_idが指定されていなければ、メッセージから取得
+        if guild_id is None and msg and msg.guild:
+            guild_id = msg.guild.id
+        # サーバーごとの辞書のみ適用
+        if guild_id is not None:
+            rows = await self.db.get_all_dictionary(guild_id)
+            for row in rows:
+                text = text.replace(row['key'], row['value'])
         if len(text) > 70:
             text = text[:70] + "省略"
         return text
