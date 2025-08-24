@@ -7,6 +7,7 @@ class PrometheusCog(commands.Cog):
         self.bot = bot
         self.vc_count_metric = Gauge('bot_voice_channel_count', '現在botが接続しているVC数')
         self.server_count_metric = Gauge('bot_server_count', 'botが参加しているサーバー数')
+        self.latency_metric = Gauge('bot_latency_ms', 'botのレイテンシ（ms）') 
         self.update_metrics.start()
         start_http_server(47724)
 
@@ -17,8 +18,10 @@ class PrometheusCog(commands.Cog):
     async def update_metrics(self):
         vc_count = len(self.bot.voice_clients) if self.bot.voice_clients else 0
         server_count = len(self.bot.guilds)
+        latency_ms = self.bot.latency * 1000 if self.bot.latency is not None else 0 
         self.vc_count_metric.set(vc_count)
         self.server_count_metric.set(server_count)
+        self.latency_metric.set(latency_ms)
 
     @update_metrics.before_loop
     async def before_update_metrics(self):
