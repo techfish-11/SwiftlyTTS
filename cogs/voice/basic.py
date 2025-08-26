@@ -1,4 +1,5 @@
 import discord
+from discord.errors import ConnectionClosed
 from discord.ext import commands
 import asyncio
 import os
@@ -57,11 +58,14 @@ class VoiceReadCog(commands.Cog):
         self.queue_tasks = {}       # {guild.id: Task}
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.cleanup_task = None  # 定期的なクリーンアップタスク
+        # 新規: ギルド単位の接続ロック
+        self.connect_locks = {}  # {guild.id: asyncio.Lock()}
         # self.monitor_task = None  # VC状態監視タスク ← 削除
         load_dotenv()  # .envファイルを読み込む
         self.debug_mode = os.getenv("DEBUG", "0") == "1"  # DEBUGモード判定
         self.reconnect_enabled = os.getenv("RECONNECT", "true").lower() != "false"  # reconnect設定を取得
         self.task_restart_interval = 1800  # タスク再作成間隔（秒）
+        self.voice_connect_timeout = int(os.getenv("VOICE_CONNECT_TIMEOUT", "60"))  # 接続タイムアウト（秒）
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
@@ -90,7 +94,11 @@ class VoiceReadCog(commands.Cog):
                     print(f"Skipping reconnection to empty VC in guild {guild.id}")
                     continue
                 try:
-                    await vc_channel.connect()
+                    # 変更: 汎用接続ヘルパーを利用
+                    voice_client = await self._connect_voice(vc_channel)
+                    if voice_client is None:
+                        print(f"Failed to reconnect to VC in guild {guild.id}: helper returned None")
+                        continue
                     await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
                     self.tts_channels[guild.id] = tts_channel.id
                     self.message_queues[guild.id] = asyncio.Queue()
@@ -127,11 +135,24 @@ class VoiceReadCog(commands.Cog):
         if interaction.user.voice:
             # 処理に時間がかかる可能性があるため Thinking を表示
             await interaction.response.defer(thinking=True)
-
             channel = interaction.user.voice.channel
-            await channel.connect()
-            await channel.guild.change_voice_state(channel=channel, self_mute=False, self_deaf=True)
-            # 記録する（テキストチャンネルはコマンド実行時のチャンネル）
+            try:
+                # 変更: ヘルパーを使って接続、リトライとフォールバック対応
+                voice_client = await self._connect_voice(channel)
+                if voice_client is None:
+                    await interaction.followup.send("ボイスチャンネルへの接続に失敗しました。時間を置いて再試行してください。", ephemeral=True)
+                    return
+            except asyncio.TimeoutError:
+                await interaction.followup.send("ボイスチャンネルへの接続がタイムアウトしました。再試行してください。", ephemeral=True)
+                return
+            except ConnectionClosed:
+                await interaction.followup.send("ボイスサーバーとの接続が切断されました。再試行してください。", ephemeral=True)
+                return
+            except Exception:
+                await interaction.followup.send("ボイスチャンネルへの接続中にエラーが発生しました。", ephemeral=True)
+                return
+
+            # 接続成功後の処理
             self.tts_channels[interaction.guild.id] = interaction.channel.id
             self.message_queues[interaction.guild.id] = asyncio.Queue()
             self.queue_tasks[interaction.guild.id] = self.bot.loop.create_task(self.process_queue(interaction.guild.id))
@@ -641,5 +662,55 @@ class VoiceReadCog(commands.Cog):
                 print(f"Error in cleanup_temp_files: {e}")
                 await asyncio.sleep(3600)
 
+    # 新規: 汎用 VC 接続ヘルパー（リトライ・4006 フォールバック対応）
+    async def _connect_voice(self, channel: discord.VoiceChannel, max_attempts: int = 3):
+        """
+        channel.connect() を安全に行うヘルパー。
+        - ギルド単位のロックで同時接続を防ぐ
+        - ConnectionClosed の close code 4006 を検出したら即座に失敗を返す（無限リトライ回避）
+        - その他例外は指数バックオフで数回リトライ
+        戻り値: VoiceClient または None
+        """
+        guild_id = channel.guild.id
+        lock = self.connect_locks.setdefault(guild_id, asyncio.Lock())
+        attempt = 0
+        reconnect_param = self.reconnect_enabled
+        backoff = 1.0
+        async with lock:
+            while attempt < max_attempts:
+                attempt += 1
+                try:
+                    vc = await channel.connect(
+                        timeout=self.voice_connect_timeout,
+                        reconnect=reconnect_param,
+                        self_mute=False,
+                        self_deaf=True
+                    )
+                    return vc
+                except ConnectionClosed as e:
+                    code = getattr(e, "code", None)
+                    print(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
+                    # 4006 が発生した場合は短時間での再試行をやめ、即座に失敗を返す
+                    if code == 4006:
+                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts to avoid repeated failures.")
+                        return None
+                    # それ以外は少し待って再試行
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                except asyncio.TimeoutError:
+                    print(f"Timeout when connecting to VC (guild={guild_id}) attempt={attempt}")
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+                except Exception as e:
+                    print(f"Error connecting to VC (guild={guild_id}) attempt={attempt}: {e}")
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+        return None
+
+async def setup(bot):
+    await bot.add_cog(VoiceReadCog(bot))
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
