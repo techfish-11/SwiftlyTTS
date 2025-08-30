@@ -8,7 +8,6 @@ from lib.VOICEVOXlib import VOICEVOXLib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import uuid
-import re
 from dotenv import load_dotenv  # dotenvをインポート
 
 # 話者名とIDの紐付けリスト
@@ -167,7 +166,8 @@ class VoiceReadCog(commands.Cog):
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
                 tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用
-                await self.voicelib.synthesize("接続しました。", self.speaker_id, tmp_wav)
+                user_speaker_id = await self.get_user_speaker_id(interaction.user.id)
+                await self.voicelib.synthesize("接続しました。", user_speaker_id, tmp_wav)
                 voice_client = interaction.guild.voice_client
                 if voice_client and not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(tmp_wav)
@@ -240,7 +240,9 @@ class VoiceReadCog(commands.Cog):
             return
         await interaction.response.defer()
         # テキストを辞書で変換
-        text = await self.apply_dictionary(text, interaction.guild.id)
+        dictionary_cog = self.bot.get_cog("DictionaryCog")
+        if dictionary_cog:
+            text = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
         try:
             tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
@@ -425,7 +427,9 @@ class VoiceReadCog(commands.Cog):
                 if not voice_client or not voice_client.is_connected():
                     continue
                 # テキストを辞書で変換
-                text = await self.apply_dictionary(text, guild_id)
+                dictionary_cog = self.bot.get_cog("DictionaryCog")
+                if dictionary_cog:
+                    text = await dictionary_cog.apply_dictionary(text, guild_id)
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
@@ -475,117 +479,13 @@ class VoiceReadCog(commands.Cog):
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
-    @app_commands.command(name="dictionary", description="読み上げ辞書を設定")
-    async def dictionary(self, interaction: discord.Interaction, key: str, value: str):
-        if await self.is_banned(interaction.user.id):
-            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
-            return
-        try:
-            author_id = interaction.user.id  # 登録者のユーザーIDを取得
-            guild_id = interaction.guild.id
-            await self.db.upsert_dictionary(guild_id, key, value, author_id)
-            embed = discord.Embed(
-                title="辞書更新",
-                description=f"辞書に追加しました: **{key}** -> **{value}**",
-                color=discord.Color.green()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=False)
-        except Exception as e:
-            embed = discord.Embed(
-                title="エラー",
-                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="dictionary-remove", description="読み上げ辞書を削除")
-    async def dictionary_remove(self, interaction: discord.Interaction, key: str):
-        if await self.is_banned(interaction.user.id):
-            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
-            return
-        try:
-            guild_id = interaction.guild.id
-            result = await self.db.remove_dictionary(guild_id, key)
-            if result == "DELETE 1":
-                embed = discord.Embed(
-                    title="辞書削除",
-                    description=f"辞書から削除しました: **{key}**",
-                    color=discord.Color.green()
-                )
-            else:
-                embed = discord.Embed(
-                    title="エラー",
-                    description=f"指定されたキーが見つかりません: **{key}**",
-                    color=discord.Color.red()
-                )
-            await interaction.response.send_message(embed=embed, ephemeral=False)
-        except Exception as e:
-            embed = discord.Embed(
-                title="エラー",
-                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="dictionary-search", description="読み上げ辞書を検索")
-    async def dictionary_search(self, interaction: discord.Interaction, key: str):
-        if await self.is_banned(interaction.user.id):
-            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
-            return
-        try:
-            guild_id = interaction.guild.id
-            row = await self.db.get_dictionary_entry(guild_id, key)
-            if row:
-                author_id = row['author_id']
-                if interaction.user.id == 1241397634095120438:
-                    description = f"**{key}** -> **{row['value']}**\n登録者: <@{author_id}>"
-                else:
-                    description = f"**{key}** -> **{row['value']}**"
-                embed = discord.Embed(
-                    title="辞書検索結果",
-                    description=f"{description}",
-                    color=discord.Color.green()
-                )
-            else:
-                embed = discord.Embed(
-                    title="エラー",
-                    description=f"指定されたキーが見つかりません: **{key}**",
-                    color=discord.Color.red()
-                )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        except Exception as e:
-            embed = discord.Embed(
-                title="エラー",
-                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
-        """辞書を適用してテキストを変換（サーバーごと対応）"""
-        msg = discord.utils.get(self.bot.cached_messages, content=text)
-        if msg:
-            for user_id in {m.id for m in msg.mentions}:
-                user = await self.bot.fetch_user(user_id)
-                if user:
-                    text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
-                    text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
-        for role in msg.role_mentions:
-            text = text.replace(f"<@&{role.id}>", f"ろーる:{role.name}")
-        text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"えもじ:{m.group(1)}", text)
-        text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"すたんぷ:{m.group(1)}", text)
-        text = re.sub(r'https?://\S+', 'リンク省略', text)
-        # guild_idが指定されていなければ、メッセージから取得
-        if guild_id is None and msg and msg.guild:
-            guild_id = msg.guild.id
-        # サーバーごとの辞書のみ適用
-        if guild_id is not None:
-            rows = await self.db.get_all_dictionary(guild_id)
-            for row in rows:
-                text = text.replace(row['key'], row['value'])
-        if len(text) > 70:
-            text = text[:70] + "省略"
-        return text
+
+
+
+
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
