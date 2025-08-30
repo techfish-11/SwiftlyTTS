@@ -596,7 +596,7 @@ class VoiceReadCog(commands.Cog):
                 try:
                     vc = await channel.connect(
                         timeout=self.voice_connect_timeout,
-                        reconnect=reconnect_param,
+                        reconnect=False,  # Changed: Disable internal retries to avoid overlapping with custom retry logic
                         self_mute=False,
                         self_deaf=True
                     )
