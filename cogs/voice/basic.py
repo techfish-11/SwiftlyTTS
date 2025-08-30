@@ -135,6 +135,20 @@ class VoiceReadCog(commands.Cog):
             # 処理に時間がかかる可能性があるため Thinking を表示
             await interaction.response.defer(thinking=True)
             channel = interaction.user.voice.channel
+            
+            # 新規: 既に同じギルドで接続されている場合、既存の接続を切断しデータをクリア
+            guild_id = interaction.guild.id
+            if interaction.guild.voice_client:
+                await interaction.guild.voice_client.disconnect()
+                # 既存のキュー・タスク等をリセット
+                if guild_id in self.queue_tasks:
+                    self.queue_tasks[guild_id].cancel()
+                    del self.queue_tasks[guild_id]
+                self.tts_channels.pop(guild_id, None)
+                self.message_queues.pop(guild_id, None)
+                # DBから既存のVC接続状態を削除
+                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild_id)
+            
             try:
                 # 変更: ヘルパーを使って接続、リトライとフォールバック対応
                 voice_client = await self._connect_voice(channel)
@@ -152,15 +166,15 @@ class VoiceReadCog(commands.Cog):
                 return
 
             # 接続成功後の処理
-            self.tts_channels[interaction.guild.id] = interaction.channel.id
-            self.message_queues[interaction.guild.id] = asyncio.Queue()
-            self.queue_tasks[interaction.guild.id] = self.bot.loop.create_task(self.process_queue(interaction.guild.id))
+            self.tts_channels[guild_id] = interaction.channel.id
+            self.message_queues[guild_id] = asyncio.Queue()
+            self.queue_tasks[guild_id] = self.bot.loop.create_task(self.process_queue(guild_id))
             
             # データベースにVC接続状態を保存（DEBUGモード時はスキップ）
             if not self.debug_mode:
                 await self.db.execute(
                     "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
-                    interaction.guild.id, channel.id, interaction.channel.id
+                    guild_id, channel.id, interaction.channel.id
                 )
 
             # 「接続しました。」と喋る処理を非同期で実行
