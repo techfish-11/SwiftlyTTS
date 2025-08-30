@@ -604,9 +604,12 @@ class VoiceReadCog(commands.Cog):
                 except ConnectionClosed as e:
                     code = getattr(e, "code", None)
                     print(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
-                    # 4006 が発生した場合は短時間での再試行をやめ、即座に失敗を返す
                     if code == 4006:
-                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts to avoid repeated failures.")
+                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts and cleaning up existing VC.")
+                        # 新規：既存の VoiceClient が残っていれば切断してクリーンアップ
+                        existing_vc = channel.guild.voice_client
+                        if existing_vc:
+                            await existing_vc.disconnect()
                         return None
                     # それ以外は少し待って再試行
                     await asyncio.sleep(backoff)
@@ -624,7 +627,5 @@ class VoiceReadCog(commands.Cog):
                     continue
         return None
 
-async def setup(bot):
-    await bot.add_cog(VoiceReadCog(bot))
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
