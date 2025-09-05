@@ -65,6 +65,7 @@ class VoiceReadCog(commands.Cog):
         self.reconnect_enabled = os.getenv("RECONNECT", "true").lower() != "false"  # reconnect設定を取得
         self.task_restart_interval = 1800  # タスク再作成間隔（秒）
         self.voice_connect_timeout = int(os.getenv("VOICE_CONNECT_TIMEOUT", "60"))  # 接続タイムアウト（秒）
+        self.sync_vcstate_task = None  # ← 追加: VC状態同期タスク
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
@@ -106,6 +107,7 @@ class VoiceReadCog(commands.Cog):
                     print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
 
         # self.monitor_task = self.bot.loop.create_task(self.monitor_vc_state()) ← 削除
+        self.sync_vcstate_task = self.bot.loop.create_task(self.sync_vcstate_periodically())  # ← 追加
 
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
@@ -121,6 +123,12 @@ class VoiceReadCog(commands.Cog):
         #         await self.monitor_task
         #     except asyncio.CancelledError:
         #         pass
+        if self.sync_vcstate_task:
+            self.sync_vcstate_task.cancel()
+            try:
+                await self.sync_vcstate_task
+            except asyncio.CancelledError:
+                pass
 
     async def is_banned(self, user_id: int) -> bool:
         """ユーザーがBANされているか確認"""
@@ -626,6 +634,31 @@ class VoiceReadCog(commands.Cog):
                     backoff *= 2
                     continue
         return None
+
+    async def sync_vcstate_periodically(self):
+        """DBのvc_stateと実際のVC接続状態を定期的に同期する"""
+        while True:
+            try:
+                await self.sync_vcstate_once()
+                await asyncio.sleep(600)  # 10分ごとに実行
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"Error in sync_vcstate_periodically: {e}")
+                await asyncio.sleep(600)
+
+    async def sync_vcstate_once(self):
+        """1回だけvc_stateとVC接続状態を同期する"""
+        # DBに記録されているギルド一覧を取得
+        db_states = await self.db.fetch("SELECT guild_id FROM vc_state")
+        db_guild_ids = {row['guild_id'] for row in db_states}
+        # 実際にVC接続しているギルド一覧
+        connected_guild_ids = {vc.guild.id for vc in self.bot.voice_clients if vc.is_connected()}
+        # DBにあるが実際には接続していないギルド
+        stale_guild_ids = db_guild_ids - connected_guild_ids
+        for gid in stale_guild_ids:
+            print(f"Removing stale vc_state for guild {gid}")
+            await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", gid)
 
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
