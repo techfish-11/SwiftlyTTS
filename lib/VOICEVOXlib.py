@@ -1,11 +1,11 @@
 import aiohttp
 import wave
 import io
-import asyncio
 import os
 from dotenv import load_dotenv
 import time
 from prometheus_client import Gauge
+import random
 
 # Load environment variables
 load_dotenv()
@@ -18,17 +18,35 @@ VOICE_GENERATION_TIME_PER_MINUTE = Gauge(
 
 class VOICEVOXLib:
     def __init__(self, base_url=None):
-        if base_url is None:
-            base_url = os.getenv("VOICEVOX_URL", "http://192.168.1.11:50021")
-            # Handle empty string case - use default if empty
-            if not base_url:
-                base_url = "http://192.168.1.11:50021"
-        self.base_url = base_url
+        self._base_url_arg = base_url  # 引数を保存
+        self._default_url = "http://192.168.1.11:50021"
+        # 初期化時は一度だけロード
+        self.base_urls = self._load_base_urls()
+
+    def _load_base_urls(self):
+        # .envを毎回再読込
+        load_dotenv(override=True)
+        if self._base_url_arg is None:
+            env_urls = os.getenv("VOICEVOX_URL", self._default_url)
+            if not env_urls:
+                env_urls = self._default_url
+            return [u.strip() for u in env_urls.split(",") if u.strip()]
+        else:
+            if isinstance(self._base_url_arg, list):
+                return self._base_url_arg
+            else:
+                return [self._base_url_arg]
+
+    def _choose_base_url(self):
+        # .envを毎回再読込してURLリストを更新
+        self.base_urls = self._load_base_urls()
+        return random.choice(self.base_urls)
 
     async def get_speakers(self):
         """Fetch available speakers from the VOICEVOX engine."""
+        base_url = self._choose_base_url()
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.base_url}/speakers") as response:
+            async with session.get(f"{base_url}/speakers") as response:
                 response.raise_for_status()
                 return await response.json()
 
@@ -42,12 +60,13 @@ class VOICEVOXLib:
             output_path (str): Path to save the output WAV file.
             speed (float): Speed of the synthesized voice (default 1.0).
         """
+        base_url = self._choose_base_url()
         async with aiohttp.ClientSession() as session:
             start_time = time.perf_counter()  # 計測開始
 
             # Step 1: Generate audio query
             async with session.post(
-                f"{self.base_url}/audio_query",
+                f"{base_url}/audio_query",
                 params={"text": text, "speaker": speaker_id}
             ) as query_response:
                 query_response.raise_for_status()
@@ -58,7 +77,7 @@ class VOICEVOXLib:
 
             # Step 2: Synthesize audio
             async with session.post(
-                f"{self.base_url}/synthesis",
+                f"{base_url}/synthesis",
                 params={"speaker": speaker_id},
                 json=audio_query
             ) as synthesis_response:
@@ -99,12 +118,13 @@ class VOICEVOXLib:
         Returns:
             bytes: The synthesized speech audio data.
         """
+        base_url = self._choose_base_url()
         async with aiohttp.ClientSession() as session:
             start_time = time.perf_counter()  # 計測開始
 
             # Step 1: Generate audio query
             async with session.post(
-                f"{self.base_url}/audio_query",
+                f"{base_url}/audio_query",
                 params={"text": text, "speaker": speaker_id}
             ) as query_response:
                 query_response.raise_for_status()
@@ -112,7 +132,7 @@ class VOICEVOXLib:
 
             # Step 2: Synthesize audio
             async with session.post(
-                f"{self.base_url}/synthesis",
+                f"{base_url}/synthesis",
                 params={"speaker": speaker_id},
                 json=audio_query
             ) as synthesis_response:

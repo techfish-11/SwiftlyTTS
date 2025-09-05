@@ -49,7 +49,7 @@ class PostgresDB:
                 );
                 CREATE TABLE IF NOT EXISTS user_voice (
                     user_id BIGINT PRIMARY KEY,
-                    speaker_id INT NOT NULL
+                    speaker_id TEXT NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS server_voice_speed (
                     guild_id BIGINT PRIMARY KEY,
@@ -61,6 +61,25 @@ class PostgresDB:
                     guild_count INTEGER NOT NULL
                 );
             """)
+            # user_voice.speaker_id の型がintegerならtextにマイグレート
+            col_info = await connection.fetchrow("""
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'user_voice' AND column_name = 'speaker_id'
+            """)
+            if col_info and col_info['data_type'] in ('integer', 'bigint', 'smallint'):
+                # 一時カラム追加→データコピー→カラム削除→リネーム
+                await connection.execute("""
+                    ALTER TABLE user_voice ADD COLUMN speaker_id_text TEXT;
+                """)
+                await connection.execute("""
+                    UPDATE user_voice SET speaker_id_text = speaker_id::text;
+                """)
+                await connection.execute("""
+                    ALTER TABLE user_voice DROP COLUMN speaker_id;
+                """)
+                await connection.execute("""
+                    ALTER TABLE user_voice RENAME COLUMN speaker_id_text TO speaker_id;
+                """)
 
     async def close(self) -> None:
         """Close the connection pool"""

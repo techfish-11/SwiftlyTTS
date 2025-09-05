@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import re
+from discord.ui import View, Button
 
 class DictionaryCog(commands.Cog):
     def __init__(self, bot):
@@ -101,6 +102,75 @@ class DictionaryCog(commands.Cog):
                     color=discord.Color.red()
                 )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="dictionary-list", description="サーバーの読み上げ辞書一覧を表示")
+    async def dictionary_list(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
+        try:
+            guild_id = interaction.guild.id
+            rows = await self.db.get_all_dictionary(guild_id)
+            if not rows:
+                embed = discord.Embed(
+                    title="辞書一覧",
+                    description="このサーバーには辞書が登録されていません。",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+            # ページネーション設定
+            PAGE_SIZE = 20
+            pages = [rows[i:i+PAGE_SIZE] for i in range(0, len(rows), PAGE_SIZE)]
+
+            def make_embed(page_idx):
+                embed = discord.Embed(
+                    title=f"辞書一覧 (ページ {page_idx+1}/{len(pages)})",
+                    color=discord.Color.green()
+                )
+                for row in pages[page_idx]:
+                    embed.add_field(
+                        name=row['key'],
+                        value=row['value'],
+                        inline=False
+                    )
+                return embed
+
+            class PaginationView(View):
+                def __init__(self):
+                    super().__init__(timeout=120)
+                    self.page = 0
+
+                async def update(self, interaction):
+                    embed = make_embed(self.page)
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @Button(label="前へ", style=discord.ButtonStyle.secondary)
+                async def prev(self, interaction: discord.Interaction, button: Button):
+                    if self.page > 0:
+                        self.page -= 1
+                        await self.update(interaction)
+                    else:
+                        await interaction.response.defer()
+
+                @Button(label="次へ", style=discord.ButtonStyle.secondary)
+                async def next(self, interaction: discord.Interaction, button: Button):
+                    if self.page < len(pages) - 1:
+                        self.page += 1
+                        await self.update(interaction)
+                    else:
+                        await interaction.response.defer()
+
+            view = PaginationView() if len(pages) > 1 else None
+            await interaction.response.send_message(embed=make_embed(0), view=view, ephemeral=True)
         except Exception as e:
             embed = discord.Embed(
                 title="エラー",
