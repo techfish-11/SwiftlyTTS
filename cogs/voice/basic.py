@@ -343,15 +343,16 @@ class VoiceReadCog(commands.Cog):
                     await inter.response.send_message("範囲外の番号です。", ephemeral=True)
                     return
                 speaker_info = SPEAKER_LIST[num - 1]
-                speaker_id = speaker_info["id"]
+                speaker_id_int = speaker_info["id"]
+                speaker_id_str = str(speaker_id_int)
                 # DBに保存
                 await cog.db.execute(
                     "INSERT INTO user_voice (user_id, speaker_id) VALUES ($1,$2) "
                     "ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2",
-                    inter.user.id, speaker_id
+                    inter.user.id, speaker_id_str
                 )
                 await inter.response.send_message(
-                    f"{inter.user.display_name}さんが声を {speaker_info['name']} (ID: {speaker_id}) に設定しました。", ephemeral=False
+                    f"{inter.user.display_name}さんが声を {speaker_info['name']} (ID: {speaker_id_int}) に設定しました。", ephemeral=False
                 )
 
         view = SpeakerListView()
@@ -433,7 +434,7 @@ class VoiceReadCog(commands.Cog):
     async def get_user_speaker_id(self, user_id: int) -> int:
         """ユーザーのスピーカーIDを取得"""
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
-        return row['speaker_id'] if row else self.speaker_id  # デフォルトはself.speaker_id
+        return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 
     async def process_queue(self, guild_id):
         """サーバーごとの読み上げキューを処理"""
