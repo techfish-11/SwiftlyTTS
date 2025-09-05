@@ -12,7 +12,6 @@ DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME}")
 
-
 class PostgresDB:
     """PostgreSQL database management class using asyncpg"""
 
@@ -55,6 +54,11 @@ class PostgresDB:
                 CREATE TABLE IF NOT EXISTS server_voice_speed (
                     guild_id BIGINT PRIMARY KEY,
                     speed FLOAT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS server_stats (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    guild_count INTEGER NOT NULL
                 );
             """)
 
@@ -104,7 +108,6 @@ class PostgresDB:
             async with connection.transaction():  # トランザクションを追加
                 for batch in range(0, len(args_list), 100):  # バッチ処理を追加
                     await connection.executemany(query, args_list[batch:batch + 100])
-
 
     async def get_server_voice_speed(self, guild_id: int) -> Optional[float]:
         """Get the voice speed for a server (guild). Returns None if not set."""
@@ -180,6 +183,14 @@ class PostgresDB:
                 "SELECT key, value FROM dictionarynew WHERE guild_id = $1", guild_id
             )
 
+    async def insert_guild_count(self, guild_count: int) -> None:
+        """サーバー数をserver_statsテーブルに記録する"""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                "INSERT INTO server_stats (guild_count) VALUES ($1)", guild_count
+            )
 
 # Example usage
 # db = PostgresDB()
