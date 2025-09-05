@@ -184,13 +184,17 @@ class PostgresDB:
             )
 
     async def insert_guild_count(self, guild_count: int) -> None:
-        """サーバー数をserver_statsテーブルに記録する"""
+        """サーバー数をserver_statsテーブルに記録し、1日経過したレコードを削除する"""
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            await connection.execute(
-                "INSERT INTO server_stats (guild_count) VALUES ($1)", guild_count
-            )
+            async with connection.transaction():
+                await connection.execute(
+                    "INSERT INTO server_stats (guild_count) VALUES ($1)", guild_count
+                )
+                await connection.execute(
+                    "DELETE FROM server_stats WHERE timestamp < (now() - INTERVAL '1 day')"
+                )
 
 # Example usage
 # db = PostgresDB()
