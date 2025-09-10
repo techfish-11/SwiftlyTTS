@@ -218,7 +218,7 @@ class DictionaryCog(commands.Cog):
             for row in rows:
                 text = text.replace(row['key'], row['value'])
         if len(text) > 70:
-            text = text[:70] + "省略"
+            text = text[:150] + "省略"
         return text
 
 async def setup(bot):
