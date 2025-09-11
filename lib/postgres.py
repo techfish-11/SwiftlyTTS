@@ -39,6 +39,10 @@ class PostgresDB:
                     author_id BIGINT NOT NULL,
                     PRIMARY KEY (guild_id, key)
                 );
+                CREATE TABLE IF NOT EXISTS globaldic (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS banlist (
                     user_id BIGINT PRIMARY KEY
                 );
@@ -200,6 +204,15 @@ class PostgresDB:
         async with self._pool.acquire() as connection:
             return await connection.fetch(
                 "SELECT key, value FROM dictionarynew WHERE guild_id = $1", guild_id
+            )
+
+    async def get_all_global_dictionary(self) -> List[asyncpg.Record]:
+        """Get all global dictionary entries."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetch(
+                "SELECT key, value FROM globaldic"
             )
 
     async def insert_guild_count(self, guild_count: int) -> None:

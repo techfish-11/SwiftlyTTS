@@ -196,7 +196,7 @@ class DictionaryCog(commands.Cog):
                 print(inner_e)
 
     async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
-        """辞書を適用してテキストを変換（サーバーごと対応）"""
+        """辞書を適用してテキストを変換（サーバーごと対応 & グローバル辞書対応）"""
         msg = discord.utils.get(self.bot.cached_messages, content=text)
         if msg:
             for user_id in {m.id for m in msg.mentions}:
@@ -212,6 +212,10 @@ class DictionaryCog(commands.Cog):
         # guild_idが指定されていなければ、メッセージから取得
         if guild_id is None and msg and msg.guild:
             guild_id = msg.guild.id
+        # グローバル辞書を先に適用
+        global_rows = await self.db.get_all_global_dictionary()
+        for row in global_rows:
+            text = text.replace(row['key'], row['value'])
         # サーバーごとの辞書のみ適用
         if guild_id is not None:
             rows = await self.db.get_all_dictionary(guild_id)
