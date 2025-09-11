@@ -2,6 +2,7 @@ import os
 import asyncpg
 from dotenv import load_dotenv
 from typing import Optional, List
+import time  # 追加
 
 load_dotenv(override=True)
 
@@ -17,6 +18,8 @@ class PostgresDB:
 
     def __init__(self) -> None:
         self._pool: Optional[asyncpg.Pool] = None
+        self._globaldic_cache: Optional[List[asyncpg.Record]] = None  # グローバル辞書キャッシュ
+        self._globaldic_cache_time: Optional[float] = None  # キャッシュ時刻
 
     async def initialize(self) -> None:
         """Initialize the connection pool and ensure the dictionary table exists"""
@@ -207,13 +210,24 @@ class PostgresDB:
             )
 
     async def get_all_global_dictionary(self) -> List[asyncpg.Record]:
-        """Get all global dictionary entries."""
+        """Get all global dictionary entries. 10分間キャッシュ"""
+        now = time.time()
+        ttl = 600  # 10分
+        if (
+            self._globaldic_cache is not None
+            and self._globaldic_cache_time is not None
+            and now - self._globaldic_cache_time < ttl
+        ):
+            return self._globaldic_cache
         if not self._pool:
             raise RuntimeError("Database connection pool is not initialized.")
         async with self._pool.acquire() as connection:
-            return await connection.fetch(
+            result = await connection.fetch(
                 "SELECT key, value FROM globaldic"
             )
+            self._globaldic_cache = result
+            self._globaldic_cache_time = now
+            return result
 
     async def insert_guild_count(self, guild_count: int) -> None:
         """サーバー数をserver_statsテーブルに記録し、1日経過したレコードを削除する"""
