@@ -4,19 +4,55 @@ from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import re
 from discord.ui import View, Button
+import asyncio
+import time
 
 class DictionaryCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.voice_cog = None  # VoiceReadCogの参照
+        self.global_dict_cache = []
+        self.server_dict_cache = {}  # guild_id: list of dict rows
+        self.cache_lock = asyncio.Lock()
+        self.cache_task = None
+        self.cache_last_update = 0
 
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.voice_cog = self.bot.get_cog("VoiceReadCog")  # VoiceReadCogを取得
+        self.cache_task = self.bot.loop.create_task(self.cache_updater())
 
     async def cog_unload(self):
         await self.db.close()  # データベース接続を閉じる
+        if self.cache_task:
+            self.cache_task.cancel()
+            try:
+                await self.cache_task
+            except asyncio.CancelledError:
+                pass
+
+    async def cache_updater(self):
+        while True:
+            try:
+                async with self.cache_lock:
+                    self.global_dict_cache = await self.db.get_all_global_dictionary()
+                    # サーバー辞書キャッシュは必要なものだけ都度取得するのでここでは空に
+                    self.server_dict_cache.clear()
+                    self.cache_last_update = time.time()
+            except Exception as e:
+                print(f"辞書キャッシュ更新エラー: {e}")
+            await asyncio.sleep(10)
+
+    async def get_server_dict(self, guild_id):
+        async with self.cache_lock:
+            if guild_id in self.server_dict_cache:
+                return self.server_dict_cache[guild_id]
+        # キャッシュになければ取得してキャッシュ
+        rows = await self.db.get_all_dictionary(guild_id)
+        async with self.cache_lock:
+            self.server_dict_cache[guild_id] = rows
+        return rows
 
     async def is_banned(self, user_id: int) -> bool:
         """ユーザーがBANされているか確認"""
@@ -33,6 +69,9 @@ class DictionaryCog(commands.Cog):
             author_id = interaction.user.id  # 登録者のユーザーIDを取得
             guild_id = interaction.guild.id
             await self.db.upsert_dictionary(guild_id, key, value, author_id)
+            # キャッシュを即時反映
+            async with self.cache_lock:
+                self.server_dict_cache.pop(guild_id, None)
             embed = discord.Embed(
                 title="辞書更新",
                 description=f"辞書に追加しました: **{key}** -> **{value}**",
@@ -55,6 +94,9 @@ class DictionaryCog(commands.Cog):
         try:
             guild_id = interaction.guild.id
             result = await self.db.remove_dictionary(guild_id, key)
+            # キャッシュを即時反映
+            async with self.cache_lock:
+                self.server_dict_cache.pop(guild_id, None)
             if result == "DELETE 1":
                 embed = discord.Embed(
                     title="辞書削除",
@@ -117,7 +159,7 @@ class DictionaryCog(commands.Cog):
             return
         try:
             guild_id = interaction.guild.id
-            rows = await self.db.get_all_dictionary(guild_id)
+            rows = await self.get_server_dict(guild_id)
             if not rows:
                 embed = discord.Embed(
                     title="📖 辞書一覧",
@@ -197,6 +239,8 @@ class DictionaryCog(commands.Cog):
 
     async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
         """辞書を適用してテキストを変換（サーバーごと対応 & グローバル辞書対応）"""
+        if not self.cache_task or self.cache_task.done():
+            self.cache_task = self.bot.loop.create_task(self.cache_updater())
         msg = discord.utils.get(self.bot.cached_messages, content=text)
         if msg:
             for user_id in {m.id for m in msg.mentions}:
@@ -204,7 +248,7 @@ class DictionaryCog(commands.Cog):
                 if user:
                     text = text.replace(f"<@{user_id}>", f"あっと{user.display_name}")
                     text = text.replace(f"<@!{user_id}>", f"あっと{user.display_name}")
-        for role in msg.role_mentions:
+        for role in msg.role_mentions if msg else []:
             text = text.replace(f"<@&{role.id}>", f"ろーる:{role.name}")
         text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"えもじ:{m.group(1)}", text)
         text = re.sub(r'<a?:([a-zA-Z0-9_]+):\d+>', lambda m: f"すたんぷ:{m.group(1)}", text)
@@ -212,13 +256,14 @@ class DictionaryCog(commands.Cog):
         # guild_idが指定されていなければ、メッセージから取得
         if guild_id is None and msg and msg.guild:
             guild_id = msg.guild.id
-        # グローバル辞書を先に適用
-        global_rows = await self.db.get_all_global_dictionary()
+        # グローバル辞書をキャッシュから適用
+        async with self.cache_lock:
+            global_rows = list(self.global_dict_cache)
         for row in global_rows:
             text = text.replace(row['key'], row['value'])
-        # サーバーごとの辞書のみ適用
+        # サーバーごとの辞書をキャッシュから適用
         if guild_id is not None:
-            rows = await self.db.get_all_dictionary(guild_id)
+            rows = await self.get_server_dict(guild_id)
             for row in rows:
                 text = text.replace(row['key'], row['value'])
         if len(text) > 70:
