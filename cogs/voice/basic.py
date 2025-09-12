@@ -483,6 +483,18 @@ class VoiceReadCog(commands.Cog):
         tts_channel_id = self.tts_channels.get(message.guild.id)
         if tts_channel_id != message.channel.id:
             return  # 違うチャンネルの場合は無視
+
+        if message.content.strip() == "$s":
+            queue = self.message_queues.get(message.guild.id)
+            if queue:
+                while not queue.empty():
+                    try:
+                        queue.get_nowait()
+                    except Exception:
+                        break
+            await message.add_reaction("✅️")
+            return
+
         # キューが存在しない場合は初期化
         queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
         # 添付画像の枚数をカウント
