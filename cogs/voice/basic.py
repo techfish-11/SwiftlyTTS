@@ -492,6 +492,9 @@ class VoiceReadCog(commands.Cog):
                         queue.get_nowait()
                     except Exception:
                         break
+            voice_client = message.guild.voice_client
+            if voice_client and voice_client.is_playing():
+                voice_client.stop()
             try:
                 await message.add_reaction("✅")
             except Exception:
