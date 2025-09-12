@@ -484,7 +484,7 @@ class VoiceReadCog(commands.Cog):
         if tts_channel_id != message.channel.id:
             return  # 違うチャンネルの場合は無視
 
-        if message.content.strip() == "$s":
+        if message.content.strip() == "s":
             queue = self.message_queues.get(message.guild.id)
             if queue:
                 while not queue.empty():
