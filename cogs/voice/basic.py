@@ -492,7 +492,10 @@ class VoiceReadCog(commands.Cog):
                         queue.get_nowait()
                     except Exception:
                         break
-            await message.add_reaction("✅️")
+            try:
+                await message.add_reaction("✅")
+            except Exception:
+                pass
             return
 
         # キューが存在しない場合は初期化
