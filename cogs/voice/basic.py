@@ -70,12 +70,11 @@ class VoiceReadCog(commands.Cog):
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
-        self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキ$s
-        ャッシュ
+        self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
 
         if self.debug_mode:
             print("DEBUGモードのためVC状態復元をスキップします。")
-            return$%FF
+            return
 
         if not self.reconnect_enabled:
             print("Reconnect is disabled. Skipping VC state restoration.")
