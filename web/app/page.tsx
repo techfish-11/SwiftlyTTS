@@ -140,7 +140,7 @@ export default function Home() {
           </p>
           <div className="flex flex-wrap gap-4">
             <a
-              href="#start"
+              href="https://discord.com/oauth2/authorize?client_id=1371465579780767824"
               className="group relative inline-flex items-center gap-2 rounded-full px-8 py-4 text-base font-semibold bg-gradient-to-br from-sky-500 via-indigo-500 to-purple-600 hover:from-sky-400 hover:via-indigo-400 hover:to-purple-500 transition shadow-lg shadow-sky-900/30"
             >
               Discord に追加
@@ -149,10 +149,10 @@ export default function Home() {
               </span>
             </a>
             <a
-              href="#why"
+              href="/commands"
               className="inline-flex items-center gap-2 rounded-full px-7 py-4 text-base font-semibold bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/30 transition"
             >
-              Why Swiftly
+              コマンド一覧
             </a>
           </div>
           <div className="flex gap-6 flex-wrap pt-4">
@@ -176,7 +176,7 @@ export default function Home() {
                     {m.label === "SERVERS"
                       ? "稼働中のサーバー数"
                       : m.label === "LATENCY"
-                      ? "平均応答遅延"
+                      ? "ボットレイテンシ"
                       : "登録可能な辞書数"}
                     <Tooltip.Arrow className="fill-black/80" />
                   </Tooltip.Content>
@@ -318,7 +318,7 @@ export default function Home() {
                     <span className="text-lg">→</span>
                   </a>
                   <a
-                    href="#commands"
+                    href="/commands"
                     className="inline-flex items-center gap-2 rounded-full px-7 py-4 bg-white/15 hover:bg-white/25 backdrop-blur border border-white/30 font-medium"
                   >
                     コマンド一覧
@@ -377,13 +377,13 @@ export default function Home() {
               特徴
             </a>
             <a
-              href="#commands"
+              href="/commands"
               className="hover:text-white/90 transition underline-offset-4 hover:underline"
             >
               コマンド
             </a>
             <a
-              href="#start"
+              href="https://discord.com/oauth2/authorize?client_id=1371465579780767824"
               className="hover:text-white/90 transition underline-offset-4 hover:underline"
             >
               導入
