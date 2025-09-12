@@ -70,11 +70,12 @@ class VoiceReadCog(commands.Cog):
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
-        self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
+        self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキ$s
+        ャッシュ
 
         if self.debug_mode:
             print("DEBUGモードのためVC状態復元をスキップします。")
-            return
+            return$%FF
 
         if not self.reconnect_enabled:
             print("Reconnect is disabled. Skipping VC state restoration.")
@@ -484,7 +485,7 @@ class VoiceReadCog(commands.Cog):
         if tts_channel_id != message.channel.id:
             return  # 違うチャンネルの場合は無視
 
-        if message.content.strip() == "$s":
+        if message.content.strip() == "s":
             queue = self.message_queues.get(message.guild.id)
             if queue:
                 while not queue.empty():
