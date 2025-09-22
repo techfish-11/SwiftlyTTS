@@ -2,17 +2,24 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from lib.postgres import PostgresDB
-
-ADMIN_ID = 1241397634095120438
+import os
+from dotenv import load_dotenv
 
 class AdminCog(commands.Cog):
     def __init__(self, bot: commands.Bot, db: PostgresDB):
         self.bot = bot
         self.db = db
 
+    def get_admin_id(self) -> int:
+        load_dotenv()  # .envを毎回読み込む
+        admin_id = os.getenv("ADMIN_ID")
+        if admin_id is None:
+            raise ValueError("ADMIN_ID is not set in .env")
+        return int(admin_id)
+
     async def is_admin(self, interaction: discord.Interaction) -> bool:
         """管理者かどうかを確認"""
-        return interaction.user.id == ADMIN_ID
+        return interaction.user.id == self.get_admin_id()
 
     @app_commands.command(name="admin", description="管理者コマンド")
     @app_commands.describe(option="実行する操作", value="操作対象")
