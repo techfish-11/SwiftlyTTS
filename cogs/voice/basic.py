@@ -578,19 +578,6 @@ class VoiceReadCog(commands.Cog):
                                 self.tts_channels[guild.id] = tts_channel.id
                                 self.message_queues[guild.id] = asyncio.Queue()
                                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
-                                # 「再接続しました。」と喋る
-                                async def play_reconnect_message():
-                                    tmp_wav = f"tmp_{uuid.uuid4()}_rejoin.wav"
-                                    await self.voicelib.synthesize("再接続しました。", self.speaker_id, tmp_wav)
-                                    vc = guild.voice_client
-                                    if vc and not vc.is_playing():
-                                        audio_source = discord.FFmpegPCMAudio(tmp_wav)
-                                        vc.play(audio_source)
-                                        while vc.is_playing():
-                                            await asyncio.sleep(0.5)
-                                    if os.path.exists(tmp_wav):
-                                        os.remove(tmp_wav)
-                                self.bot.loop.create_task(play_reconnect_message())
                         except Exception as e:
                             print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
                 return
