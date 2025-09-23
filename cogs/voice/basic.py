@@ -561,6 +561,40 @@ class VoiceReadCog(commands.Cog):
                     await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                     return
 
+            # --- ボットが予期せずVCから切断された場合の即時再接続 ---
+            # ボット自身がVCから抜けた場合（leaveコマンド以外の理由で）
+            if member == guild.me and before.channel is not None and after.channel is None:
+                row = await self.db.fetchrow("SELECT channel_id, tts_channel_id FROM vc_state WHERE guild_id = $1", guild.id)
+                if row:
+                    vc_channel = guild.get_channel(row['channel_id'])
+                    tts_channel = guild.get_channel(row['tts_channel_id'])
+                    if vc_channel and tts_channel:
+                        print(f"Bot was disconnected from VC in guild {guild.id}, attempting immediate reconnect...")
+                        try:
+                            # 再接続
+                            voice_client = await self._connect_voice(vc_channel)
+                            if voice_client is not None:
+                                await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
+                                self.tts_channels[guild.id] = tts_channel.id
+                                self.message_queues[guild.id] = asyncio.Queue()
+                                self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+                                # 「再接続しました。」と喋る
+                                async def play_reconnect_message():
+                                    tmp_wav = f"tmp_{uuid.uuid4()}_rejoin.wav"
+                                    await self.voicelib.synthesize("再接続しました。", self.speaker_id, tmp_wav)
+                                    vc = guild.voice_client
+                                    if vc and not vc.is_playing():
+                                        audio_source = discord.FFmpegPCMAudio(tmp_wav)
+                                        vc.play(audio_source)
+                                        while vc.is_playing():
+                                            await asyncio.sleep(0.5)
+                                    if os.path.exists(tmp_wav):
+                                        os.remove(tmp_wav)
+                                self.bot.loop.create_task(play_reconnect_message())
+                        except Exception as e:
+                            print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+                return
+
             # 参加・退出時にTTSを再生
             if before.channel is None and after.channel is not None:
                 msg = f"{member.display_name}が参加しました。"
