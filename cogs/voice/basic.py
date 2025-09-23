@@ -557,34 +557,32 @@ class VoiceReadCog(commands.Cog):
             guild = member.guild
             voice_client = guild.voice_client
 
-            # ボットのみになった場合は切断
-            if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
-                await voice_client.disconnect()
-                if guild.id in self.queue_tasks:
-                    self.queue_tasks[guild.id].cancel()
-                    del self.queue_tasks[guild.id]
-                self.tts_channels.pop(guild.id, None)
-                self.message_queues.pop(guild.id, None)
-                # データベースからVC接続状態を削除
-                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
-                return
+            # --- 自動切断を無効化: エラー発生時にもVCから切断しない ---
+            # if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
+            #     await voice_client.disconnect()
+            #     if guild.id in self.queue_tasks:
+            #         self.queue_tasks[guild.id].cancel()
+            #         del self.queue_tasks[guild.id]
+            #     self.tts_channels.pop(guild.id, None)
+            #     self.message_queues.pop(guild.id, None)
+            #     await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+            #     return
 
-            # ボイスチャンネル未接続の場合の処理や接続チェック
-            if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
-                # ボットがVCから追放された場合
-                if member == guild.me:
-                    await voice_client.disconnect()
-                    if guild.id in self.queue_tasks:
-                        self.queue_tasks[guild.id].cancel()
-                        del self.queue_tasks[guild.id]
-                    self.tts_channels.pop(guild.id, None)
-                    self.message_queues.pop(guild.id, None)
-                    # データベースからVC接続状態を削除
-                    await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
-                    return
+            # --- ボットがVCから追放された場合の自動切断も無効化 ---
+            # if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
+            #     if member == guild.me:
+            #         await voice_client.disconnect()
+            #         if guild.id in self.queue_tasks:
+            #             self.queue_tasks[guild.id].cancel()
+            #             del self.queue_tasks[guild.id]
+            #         self.tts_channels.pop(guild.id, None)
+            #         self.message_queues.pop(guild.id, None)
+            #         await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+            #         return
 
             # --- ボットが予期せずVCから切断された場合の即時再接続 ---
             # ボット自身がVCから抜けた場合（leaveコマンド以外の理由で）
+            
             if member == guild.me and before.channel is not None and after.channel is None:
                 row = await self.db.fetchrow("SELECT channel_id, tts_channel_id FROM vc_state WHERE guild_id = $1", guild.id)
                 if row:
@@ -678,11 +676,7 @@ class VoiceReadCog(commands.Cog):
                     code = getattr(e, "code", None)
                     print(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
                     if code == 4006:
-                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts and cleaning up existing VC.")
-                        # 新規：既存の VoiceClient が残っていれば切断してクリーンアップ
-                        existing_vc = channel.guild.voice_client
-                        if existing_vc:
-                            await existing_vc.disconnect()
+                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts without disconnect.")
                         return None
                     # それ以外は少し待って再試行
                     await asyncio.sleep(backoff)
