@@ -9,6 +9,7 @@ from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
 import uuid
 from dotenv import load_dotenv  # dotenvをインポート
+import traceback
 
 # 話者名とIDの紐付けリスト
 SPEAKER_LIST = [
@@ -67,6 +68,17 @@ class VoiceReadCog(commands.Cog):
         self.voice_connect_timeout = int(os.getenv("VOICE_CONNECT_TIMEOUT", "60"))  # 接続タイムアウト（秒）
         self.sync_vcstate_task = None  # ← 追加: VC状態同期タスク
 
+        def handle_global_exception(loop, context):
+            print("=== Unhandled exception in event loop ===")
+            msg = context.get("exception", context.get("message"))
+            print(f"Exception: {msg}")
+            traceback.print_exc()
+            if "future" in context:
+                fut = context["future"]
+                if hasattr(fut, "print_stack"):
+                    fut.print_stack()
+        self.bot.loop.set_exception_handler(handle_global_exception)
+
     async def cog_load(self):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
@@ -105,6 +117,7 @@ class VoiceReadCog(commands.Cog):
                     self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                 except Exception as e:
                     print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+                    traceback.print_exc()
 
         # self.monitor_task = self.bot.loop.create_task(self.monitor_vc_state()) ← 削除
         self.sync_vcstate_task = self.bot.loop.create_task(self.sync_vcstate_periodically())  # ← 追加
@@ -117,6 +130,9 @@ class VoiceReadCog(commands.Cog):
                 await self.cleanup_task
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                print(f"Error while cancelling cleanup_task: {e}")
+                traceback.print_exc()
         # if self.monitor_task:
         #     self.monitor_task.cancel()
         #     try:
@@ -129,6 +145,9 @@ class VoiceReadCog(commands.Cog):
                 await self.sync_vcstate_task
             except asyncio.CancelledError:
                 pass
+            except Exception as e:
+                print(f"Error while cancelling sync_vcstate_task: {e}")
+                traceback.print_exc()
 
     async def is_banned(self, user_id: int) -> bool:
         """ユーザーがBANされているか確認"""
@@ -272,6 +291,7 @@ class VoiceReadCog(commands.Cog):
                 speed = 1.0
             await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
         except Exception:
+            traceback.print_exc()
             return
         if not voice_client.is_playing():
             audio_source = discord.FFmpegPCMAudio(tmp_wav)
@@ -468,6 +488,8 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 break  # タスクがキャンセルされた場合は終了
             except Exception as e:
+                print(f"Error in process_queue for guild {guild_id}: {e}")
+                traceback.print_exc()
                 continue  # その他のエラーは無視して次のメッセージへ
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
 
@@ -580,6 +602,7 @@ class VoiceReadCog(commands.Cog):
                                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                         except Exception as e:
                             print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+                            traceback.print_exc()
                 return
 
             # 参加・退出時にTTSを再生
@@ -602,6 +625,7 @@ class VoiceReadCog(commands.Cog):
 
         except Exception as e:
             print(f"Error in on_voice_state_update: {e}")
+            traceback.print_exc()
 
     async def cleanup_temp_files(self):
         """定期的に不要なwavファイルを削除"""
@@ -622,6 +646,7 @@ class VoiceReadCog(commands.Cog):
                 break
             except Exception as e:
                 print(f"Error in cleanup_temp_files: {e}")
+                traceback.print_exc()
                 await asyncio.sleep(3600)
 
     # 新規: 汎用 VC 接続ヘルパー（リトライ・4006 フォールバック対応）
@@ -685,6 +710,7 @@ class VoiceReadCog(commands.Cog):
                 break
             except Exception as e:
                 print(f"Error in sync_vcstate_periodically: {e}")
+                traceback.print_exc()
                 await asyncio.sleep(600)
 
     async def sync_vcstate_once(self):
