@@ -557,32 +557,34 @@ class VoiceReadCog(commands.Cog):
             guild = member.guild
             voice_client = guild.voice_client
 
-            # --- 自動切断を無効化: エラー発生時にもVCから切断しない ---
-            # if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
-            #     await voice_client.disconnect()
-            #     if guild.id in self.queue_tasks:
-            #         self.queue_tasks[guild.id].cancel()
-            #         del self.queue_tasks[guild.id]
-            #     self.tts_channels.pop(guild.id, None)
-            #     self.message_queues.pop(guild.id, None)
-            #     await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
-            #     return
+            # ボットのみになった場合は切断
+            if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
+                await voice_client.disconnect()
+                if guild.id in self.queue_tasks:
+                    self.queue_tasks[guild.id].cancel()
+                    del self.queue_tasks[guild.id]
+                self.tts_channels.pop(guild.id, None)
+                self.message_queues.pop(guild.id, None)
+                # データベースからVC接続状態を削除
+                await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+                return
 
-            # --- ボットがVCから追放された場合の自動切断も無効化 ---
-            # if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
-            #     if member == guild.me:
-            #         await voice_client.disconnect()
-            #         if guild.id in self.queue_tasks:
-            #             self.queue_tasks[guild.id].cancel()
-            #             del self.queue_tasks[guild.id]
-            #         self.tts_channels.pop(guild.id, None)
-            #         self.message_queues.pop(guild.id, None)
-            #         await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
-            #         return
+            # ボイスチャンネル未接続の場合の処理や接続チェック
+            if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
+                # ボットがVCから追放された場合
+                if member == guild.me:
+                    await voice_client.disconnect()
+                    if guild.id in self.queue_tasks:
+                        self.queue_tasks[guild.id].cancel()
+                        del self.queue_tasks[guild.id]
+                    self.tts_channels.pop(guild.id, None)
+                    self.message_queues.pop(guild.id, None)
+                    # データベースからVC接続状態を削除
+                    await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
+                    return
 
             # --- ボットが予期せずVCから切断された場合の即時再接続 ---
             # ボット自身がVCから抜けた場合（leaveコマンド以外の理由で）
-            
             if member == guild.me and before.channel is not None and after.channel is None:
                 row = await self.db.fetchrow("SELECT channel_id, tts_channel_id FROM vc_state WHERE guild_id = $1", guild.id)
                 if row:
@@ -652,14 +654,13 @@ class VoiceReadCog(commands.Cog):
         """
         channel.connect() を安全に行うヘルパー。
         - ギルド単位のロックで同時接続を防ぐ
-        - ConnectionClosed の close code 4006 を検出したら即座に失敗を返す（無限リトライ回避）
+        - ConnectionClosed の close code 4006 を検出したら強制切断せず中断（以前はdisconnectしていた）
         - その他例外は指数バックオフで数回リトライ
         戻り値: VoiceClient または None
         """
         guild_id = channel.guild.id
         lock = self.connect_locks.setdefault(guild_id, asyncio.Lock())
         attempt = 0
-        reconnect_param = self.reconnect_enabled
         backoff = 1.0
         async with lock:
             while attempt < max_attempts:
@@ -667,7 +668,7 @@ class VoiceReadCog(commands.Cog):
                 try:
                     vc = await channel.connect(
                         timeout=self.voice_connect_timeout,
-                        reconnect=False,  # Changed: Disable internal retries to avoid overlapping with custom retry logic
+                        reconnect=False,
                         self_mute=False,
                         self_deaf=True
                     )
@@ -676,9 +677,8 @@ class VoiceReadCog(commands.Cog):
                     code = getattr(e, "code", None)
                     print(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
                     if code == 4006:
-                        print(f"Detected 4006 for guild={guild_id}; aborting connect attempts without disconnect.")
+                        print(f"Detected 4006 for guild={guild_id}; aborting further attempts (no forced disconnect).")
                         return None
-                    # それ以外は少し待って再試行
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
