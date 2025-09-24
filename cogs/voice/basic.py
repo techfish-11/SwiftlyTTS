@@ -10,6 +10,7 @@ from lib.postgres import PostgresDB  # PostgresDBをインポート
 import uuid
 from dotenv import load_dotenv  # dotenvをインポート
 import traceback
+import logging
 
 # 話者名とIDの紐付けリスト
 SPEAKER_LIST = [
@@ -67,11 +68,12 @@ class VoiceReadCog(commands.Cog):
         self.task_restart_interval = 1800  # タスク再作成間隔（秒）
         self.voice_connect_timeout = int(os.getenv("VOICE_CONNECT_TIMEOUT", "60"))  # 接続タイムアウト（秒）
         self.sync_vcstate_task = None  # ← 追加: VC状態同期タスク
+        self.logger = logging.getLogger(__name__)
 
         def handle_global_exception(loop, context):
-            print("=== Unhandled exception in event loop ===")
+            self.logger.error("=== Unhandled exception in event loop ===")
             msg = context.get("exception", context.get("message"))
-            print(f"Exception: {msg}")
+            self.logger.error(f"Exception: {msg}")
             traceback.print_exc()
             if "future" in context:
                 fut = context["future"]
@@ -85,11 +87,11 @@ class VoiceReadCog(commands.Cog):
         self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
 
         if self.debug_mode:
-            print("DEBUGモードのためVC状態復元をスキップします。")
+            self.logger.info("DEBUGモードのためVC状態復元をスキップします。")
             return
 
         if not self.reconnect_enabled:
-            print("Reconnect is disabled. Skipping VC state restoration.")
+            self.logger.info("Reconnect is disabled. Skipping VC state restoration.")
             return  # 再接続が無効の場合はスキップ
 
         # VC接続状態を復元
@@ -103,20 +105,20 @@ class VoiceReadCog(commands.Cog):
             if guild and vc_channel and tts_channel:
                 # チャンネルに人がいない場合はスキップ
                 if not vc_channel.members or all(member.bot for member in vc_channel.members):
-                    print(f"Skipping reconnection to empty VC in guild {guild.id}")
+                    self.logger.info(f"Skipping reconnection to empty VC in guild {guild.id}")
                     continue
                 try:
                     # 変更: 汎用接続ヘルパーを利用
                     voice_client = await self._connect_voice(vc_channel)
                     if voice_client is None:
-                        print(f"Failed to reconnect to VC in guild {guild.id}: helper returned None")
+                        self.logger.warning(f"Failed to reconnect to VC in guild {guild.id}: helper returned None")
                         continue
                     await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
                     self.tts_channels[guild.id] = tts_channel.id
                     self.message_queues[guild.id] = asyncio.Queue()
                     self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                 except Exception as e:
-                    print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+                    self.logger.error(f"Failed to reconnect to VC in guild {guild.id}: {e}")
                     traceback.print_exc()
 
         # self.monitor_task = self.bot.loop.create_task(self.monitor_vc_state()) ← 削除
@@ -131,7 +133,7 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                print(f"Error while cancelling cleanup_task: {e}")
+                self.logger.error(f"Error while cancelling cleanup_task: {e}")
                 traceback.print_exc()
         # if self.monitor_task:
         #     self.monitor_task.cancel()
@@ -146,7 +148,7 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                print(f"Error while cancelling sync_vcstate_task: {e}")
+                self.logger.error(f"Error while cancelling sync_vcstate_task: {e}")
                 traceback.print_exc()
 
     async def is_banned(self, user_id: int) -> bool:
@@ -242,7 +244,7 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
             return
         if interaction.guild.voice_client:
-            print(f"[VC Disconnect] Reason: leave command by user in guild {interaction.guild.id}, channel {interaction.guild.voice_client.channel.id}")
+            self.logger.info(f"[VC Disconnect] Reason: leave command by user in guild {interaction.guild.id}, channel {interaction.guild.voice_client.channel.id}")
             await interaction.guild.voice_client.disconnect()
             # キュー・タスク等をリセット
             if interaction.guild.id in self.queue_tasks:
@@ -489,7 +491,7 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 break  # タスクがキャンセルされた場合は終了
             except Exception as e:
-                print(f"Error in process_queue for guild {guild_id}: {e}")
+                self.logger.error(f"Error in process_queue for guild {guild_id}: {e}")
                 traceback.print_exc()
                 continue  # その他のエラーは無視して次のメッセージへ
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
@@ -560,7 +562,7 @@ class VoiceReadCog(commands.Cog):
 
             # ボットのみになった場合は切断
             if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
-                print(f"[VC Disconnect] Reason: Bot only in VC (guild={guild.id}, channel={voice_client.channel.id})")
+                self.logger.info(f"[VC Disconnect] Reason: Bot only in VC (guild={guild.id}, channel={voice_client.channel.id})")
                 await voice_client.disconnect()
                 if guild.id in self.queue_tasks:
                     self.queue_tasks[guild.id].cancel()
@@ -575,7 +577,7 @@ class VoiceReadCog(commands.Cog):
             if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
                 # ボットがVCから追放された場合
                 if member == guild.me:
-                    print(f"[VC Disconnect] Reason: Bot was kicked from VC (guild={guild.id}, channel={voice_client.channel.id})")
+                    self.logger.info(f"[VC Disconnect] Reason: Bot was kicked from VC (guild={guild.id}, channel={voice_client.channel.id})")
                     await voice_client.disconnect()
                     if guild.id in self.queue_tasks:
                         self.queue_tasks[guild.id].cancel()
@@ -589,13 +591,13 @@ class VoiceReadCog(commands.Cog):
             # --- ボットが予期せずVCから切断された場合の即時再接続 ---
             # ボット自身がVCから抜けた場合（leaveコマンド以外の理由で）
             if member == guild.me and before.channel is not None and after.channel is None:
-                print(f"[VC Disconnect] Reason: Bot left VC unexpectedly (guild={guild.id}, channel={before.channel.id})")
+                self.logger.info(f"[VC Disconnect] Reason: Bot left VC unexpectedly (guild={guild.id}, channel={before.channel.id})")
                 row = await self.db.fetchrow("SELECT channel_id, tts_channel_id FROM vc_state WHERE guild_id = $1", guild.id)
                 if row:
                     vc_channel = guild.get_channel(row['channel_id'])
                     tts_channel = guild.get_channel(row['tts_channel_id'])
                     if vc_channel and tts_channel:
-                        print(f"Bot was disconnected from VC in guild {guild.id}, attempting immediate reconnect...")
+                        self.logger.info(f"Bot was disconnected from VC in guild {guild.id}, attempting immediate reconnect...")
                         try:
                             # 再接続
                             voice_client = await self._connect_voice(vc_channel)
@@ -605,7 +607,7 @@ class VoiceReadCog(commands.Cog):
                                 self.message_queues[guild.id] = asyncio.Queue()
                                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                         except Exception as e:
-                            print(f"Failed to reconnect to VC in guild {guild.id}: {e}")
+                            self.logger.error(f"Failed to reconnect to VC in guild {guild.id}: {e}")
                             traceback.print_exc()
                 return
 
@@ -628,7 +630,7 @@ class VoiceReadCog(commands.Cog):
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
 
         except Exception as e:
-            print(f"Error in on_voice_state_update: {e}")
+            self.logger.error(f"Error in on_voice_state_update: {e}")
             traceback.print_exc()
 
     async def cleanup_temp_files(self):
@@ -642,14 +644,14 @@ class VoiceReadCog(commands.Cog):
                             file_path = os.path.join(temp_dir, file)
                             try:
                                 os.remove(file_path)
-                                print(f"Deleted temp file: {file_path}")
+                                self.logger.info(f"Deleted temp file: {file_path}")
                             except Exception as e:
-                                print(f"Failed to delete {file_path}: {e}")
+                                self.logger.error(f"Failed to delete {file_path}: {e}")
                 await asyncio.sleep(3600)  # 1時間ごとに実行
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error in cleanup_temp_files: {e}")
+                self.logger.error(f"Error in cleanup_temp_files: {e}")
                 traceback.print_exc()
                 await asyncio.sleep(3600)
 
@@ -679,20 +681,20 @@ class VoiceReadCog(commands.Cog):
                     return vc
                 except ConnectionClosed as e:
                     code = getattr(e, "code", None)
-                    print(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
+                    self.logger.warning(f"ConnectionClosed when connecting to VC (guild={guild_id}) attempt={attempt} code={code}")
                     if code == 4006:
-                        print(f"Detected 4006 for guild={guild_id}; aborting further attempts (no forced disconnect).")
+                        self.logger.warning(f"Detected 4006 for guild={guild_id}; aborting further attempts (no forced disconnect).")
                         return None
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
                 except asyncio.TimeoutError:
-                    print(f"Timeout when connecting to VC (guild={guild_id}) attempt={attempt}")
+                    self.logger.warning(f"Timeout when connecting to VC (guild={guild_id}) attempt={attempt}")
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
                 except Exception as e:
-                    print(f"Error connecting to VC (guild={guild_id}) attempt={attempt}: {e}")
+                    self.logger.error(f"Error connecting to VC (guild={guild_id}) attempt={attempt}: {e}")
                     await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
@@ -707,7 +709,7 @@ class VoiceReadCog(commands.Cog):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"Error in sync_vcstate_periodically: {e}")
+                self.logger.error(f"Error in sync_vcstate_periodically: {e}")
                 traceback.print_exc()
                 await asyncio.sleep(600)
 
@@ -721,8 +723,20 @@ class VoiceReadCog(commands.Cog):
         # DBにあるが実際には接続していないギルド
         stale_guild_ids = db_guild_ids - connected_guild_ids
         for gid in stale_guild_ids:
-            print(f"Removing stale vc_state for guild {gid}")
+            self.logger.info(f"Removing stale vc_state for guild {gid}")
             await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", gid)
+        # DBにないが接続しているギルドに対してレコードを追加
+        new_guild_ids = connected_guild_ids - db_guild_ids
+        for gid in new_guild_ids:
+            vc = next((vc for vc in self.bot.voice_clients if vc.guild.id == gid), None)
+            if vc and vc.is_connected():
+                tts_channel_id = self.tts_channels.get(gid)
+                if tts_channel_id:
+                    self.logger.info(f"Adding missing vc_state for guild {gid}")
+                    await self.db.execute(
+                        "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
+                        gid, vc.channel.id, tts_channel_id
+                    )
 
 async def setup(bot):
     await bot.add_cog(VoiceReadCog(bot))
