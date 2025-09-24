@@ -242,6 +242,7 @@ class VoiceReadCog(commands.Cog):
             await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
             return
         if interaction.guild.voice_client:
+            print(f"[VC Disconnect] Reason: leave command by user in guild {interaction.guild.id}, channel {interaction.guild.voice_client.channel.id}")
             await interaction.guild.voice_client.disconnect()
             # キュー・タスク等をリセット
             if interaction.guild.id in self.queue_tasks:
@@ -559,6 +560,7 @@ class VoiceReadCog(commands.Cog):
 
             # ボットのみになった場合は切断
             if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
+                print(f"[VC Disconnect] Reason: Bot only in VC (guild={guild.id}, channel={voice_client.channel.id})")
                 await voice_client.disconnect()
                 if guild.id in self.queue_tasks:
                     self.queue_tasks[guild.id].cancel()
@@ -573,6 +575,7 @@ class VoiceReadCog(commands.Cog):
             if voice_client and before.channel == voice_client.channel and after.channel != voice_client.channel:
                 # ボットがVCから追放された場合
                 if member == guild.me:
+                    print(f"[VC Disconnect] Reason: Bot was kicked from VC (guild={guild.id}, channel={voice_client.channel.id})")
                     await voice_client.disconnect()
                     if guild.id in self.queue_tasks:
                         self.queue_tasks[guild.id].cancel()
@@ -586,6 +589,7 @@ class VoiceReadCog(commands.Cog):
             # --- ボットが予期せずVCから切断された場合の即時再接続 ---
             # ボット自身がVCから抜けた場合（leaveコマンド以外の理由で）
             if member == guild.me and before.channel is not None and after.channel is None:
+                print(f"[VC Disconnect] Reason: Bot left VC unexpectedly (guild={guild.id}, channel={before.channel.id})")
                 row = await self.db.fetchrow("SELECT channel_id, tts_channel_id FROM vc_state WHERE guild_id = $1", guild.id)
                 if row:
                     vc_channel = guild.get_channel(row['channel_id'])
