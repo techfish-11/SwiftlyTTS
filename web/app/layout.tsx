@@ -75,13 +75,13 @@ export const metadata: Metadata = {
     siteName: "Swiftly読み上げbot",
     images: [
       {
-        url: "https://cdn.sakana11.org/swiftly/banner.gif",
+        url: "/banner.png",
         width: 1200,
         height: 630,
         alt: "Swiftly読み上げbot - Ultra Low Latency Voice Synthesis",
       },
       {
-        url: "https://cdn.sakana11.org/swiftly/banner.gif",
+        url: "/banner.png",
         width: 1200,
         height: 630,
         alt: "Swiftly - Discord TTS preview",
@@ -95,7 +95,7 @@ export const metadata: Metadata = {
     title: "Swiftly読み上げbot | Discord最強の低遅延TTSボット",
     description:
       "Swiftly読み上げbotは、Discord向けの超高速・低遅延・高品質な日本語TTSボット。無料・VOICEVOX対応・24時間稼働・初心者にもおすすめ。今すぐ導入！",
-    images: ["https://cdn.sakana11.org/swiftly/banner.gif"],
+    images: ["/banner.png"],
     creator: "@11sakana1",
     site: "@11sakana1"
   },
