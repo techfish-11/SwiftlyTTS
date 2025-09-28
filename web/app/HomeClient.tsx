@@ -194,7 +194,7 @@ export default function Home() {
                   px: 4,
                   py: 1.5,
                   fontSize: '1.1rem',
-                  borderRadius: 28,
+                  borderRadius: -10,
                   textTransform: 'none',
                 }}
               >
@@ -207,7 +207,7 @@ export default function Home() {
                 sx={{
                   px: 4,
                   py: 1.5,
-                  borderRadius: 28,
+                  borderRadius: -10,
                   textTransform: 'none',
                 }}
               >
@@ -219,7 +219,7 @@ export default function Home() {
           {/* Metrics */}
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
             {metrics.map((m) => (
-              <Card sx={{ borderRadius: 3, boxShadow: 1, minWidth: 120, flex: 1, maxWidth: 200 }} key={m.label}>
+              <Card sx={{ borderRadius: 1, boxShadow: 1, minWidth: 120, flex: 1, maxWidth: 200 }} key={m.label}>
                 <CardContent sx={{ textAlign: 'center', py: 3 }}>
                   <Box sx={{ color: 'primary.main', mb: 1 }}>{m.icon}</Box>
                   <Typography variant="h3" sx={{ fontWeight: 600, mb: 1 }}>
@@ -245,7 +245,7 @@ export default function Home() {
             </Typography>
             <Box sx={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {features.map((f) => (
-                <Card sx={{ height: '100%', borderRadius: 3, boxShadow: 1, flex: '1 1 300px', minWidth: 250 }} key={f.title}>
+                <Card sx={{ height: '100%', borderRadius: 1, boxShadow: 1, flex: '1 1 300px', minWidth: 250 }} key={f.title}>
                   <CardContent sx={{ p: 3 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
                       {f.icon}
@@ -318,6 +318,13 @@ export default function Home() {
                   <Typography component="li" variant="body2" sx={{ color: 'onSurface.variant' }}>
                     ユーザーが貢献できるようにする（オープンソース）
                   </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                  <img
+                    src="/botsyoukai.gif"
+                    alt="SwiftlyTTS Bot紹介"
+                    style={{ maxWidth: '100%', height: 'auto', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                  />
                 </Box>
               </Card>
             </Box>

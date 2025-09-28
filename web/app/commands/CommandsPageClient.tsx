@@ -99,7 +99,7 @@ export default function CommandsPageClient() {
           </Typography>
           <Stack spacing={4}>
             {commands.map((c) => (
-              <Card key={c.cmd} elevation={3} sx={{ borderRadius: 3, bgcolor: "background.paper", border: 1, borderColor: "outline.variant" }}>
+              <Card key={c.cmd} elevation={3} sx={{ borderRadius: 1, bgcolor: "background.paper", border: 1, borderColor: "outline.variant" }}>
                 <CardContent>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 1 }}>
                     <Chip label={c.cmd} color="primary" sx={{ fontFamily: 'Roboto Mono, monospace', fontWeight: 700, fontSize: 16, px: 1.5, py: 0.5 }} />
