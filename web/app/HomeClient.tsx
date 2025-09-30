@@ -14,6 +14,11 @@ import {
   ListItemText,
   Chip,
   Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  IconButton,
+  Tooltip as MuiTooltip,
 } from '@mui/material';
 import {
   Cloud,
@@ -27,11 +32,102 @@ import {
   SkipPrevious as SkipBack,
   SkipNext as SkipForward,
   Add as Plus,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import theme from '../lib/theme';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend,
+} from 'chart.js';
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
 
 export default function Home() {
   const [serverCount, setServerCount] = useState<string>("Loading...");
+  // Grafana モーダル制御
+  const [grafanaOpen, setGrafanaOpen] = useState(false);
+
+  const grafanaTarget = 'https://stats.sakana11.org/public-dashboards/68f9b3d55f43490c9d07c1daf1475f3c/';
+  // we no longer embed Grafana iframe; use Prometheus querying instead
+  
+  type ChartDataType = {
+    labels: string[];
+    datasets: Array<{
+      label: string;
+      data: number[];
+      fill?: boolean;
+      borderColor: string;
+      backgroundColor: string;
+      tension?: number;
+    }>;
+  } | null;
+
+  // Prometheus chart state
+  const [promLoading, setPromLoading] = useState(false);
+  const [promError, setPromError] = useState<string | null>(null);
+  const [chartData, setChartData] = useState<ChartDataType>(null);
+
+  async function fetchPrometheusSeries(promql = 'bot_server_count', rangeSeconds = 3600, step = 2419) {
+    setPromLoading(true);
+    setPromError(null);
+    try {
+      const end = Math.floor(Date.now() / 1000);
+      const start = end - rangeSeconds;
+      const url = `/api/prometheus/range?query=${encodeURIComponent(promql)}&start=${start}&end=${end}&step=${step}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Status ${res.status}`);
+      }
+      const payload = await res.json();
+
+      if (!payload || payload.status !== 'success' || !payload.data || !Array.isArray(payload.data.result)) {
+        throw new Error('Unexpected Prometheus response');
+      }
+
+      const results: Array<{ metric: Record<string, string>; values: Array<[number | string, string]> }> = payload.data.result;
+      if (results.length === 0) {
+        // Empty result
+        setChartData({ labels: [], datasets: [] });
+        setPromLoading(false);
+        return;
+      }
+
+      // Assume all series use the same timestamp steps. Use the first series to build labels.
+      const firstValues: Array<[number | string, string]> = results[0].values;
+      const labels = firstValues.map((v) => {
+        const ts = typeof v[0] === 'string' ? Number(v[0]) : v[0];
+        return new Date(ts * 1000).toLocaleTimeString();
+      });
+
+      const datasets = results.map((r, idx) => {
+        const name = (r.metric && r.metric.__name__) || Object.values(r.metric).join(', ') || `series_${idx}`;
+        const data = r.values.map((v) => parseFloat(String(v[1])));
+        const hue = (idx * 70) % 360;
+        return {
+          label: name,
+          data,
+          fill: false,
+          borderColor: `hsl(${hue} 80% 50%)`,
+          backgroundColor: `hsl(${hue} 80% 40%)`,
+          tension: 0.2,
+        };
+      });
+
+      setChartData({ labels, datasets });
+      setPromLoading(false);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      setPromError(message);
+      setPromLoading(false);
+    }
+  }
 
   useEffect(() => {
     fetch("/api/servers")
@@ -46,8 +142,16 @@ export default function Home() {
       });
   }, []);
 
+  useEffect(() => {
+    if (grafanaOpen) {
+      // Fetch 7 days of data at 1h resolution by default; query 'up' is generic and available in most Prometheus setups.
+      fetchPrometheusSeries('bot_server_count', 604800, 3600);
+    }
+  }, [grafanaOpen]);
+
   const metrics = [
-    { label: "サーバー", value: serverCount, icon: <Cloud /> },
+    // サーバーカードはクリックでGrafanaのパネルを開く
+    { label: "サーバー", value: serverCount, icon: <Cloud />, onClick: () => setGrafanaOpen(true) },
     { label: "ボットレイテンシ", value: "~200ms", icon: <Flash /> },
     { label: "辞書", value: "∞", icon: <BookOpen /> },
   ];
@@ -219,19 +323,92 @@ export default function Home() {
           {/* Metrics */}
           <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', justifyContent: 'center' }}>
             {metrics.map((m) => (
-              <Card sx={{ borderRadius: 1, boxShadow: 1, minWidth: 120, flex: 1, maxWidth: 200 }} key={m.label}>
-                <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                  <Box sx={{ color: 'primary.main', mb: 1 }}>{m.icon}</Box>
-                  <Typography variant="h3" sx={{ fontWeight: 600, mb: 1 }}>
-                    {m.value}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'onSurface.variant', textTransform: 'uppercase', letterSpacing: 1 }}>
-                    {m.label}
-                  </Typography>
-                </CardContent>
-              </Card>
+              m.label === "サーバー" ? (
+                <MuiTooltip title="クリックするとグラフが見れます" key={m.label}>
+                  <Card
+                    sx={{ borderRadius: 1, boxShadow: 1, minWidth: 120, flex: 1, maxWidth: 200, cursor: m.onClick ? 'pointer' : 'default' }}
+                    onClick={m.onClick}
+                    role={m.onClick ? 'button' : undefined}
+                    aria-label={m.onClick ? `Open ${m.label} Grafana panel` : undefined}
+                  >
+                     <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                       <Box sx={{ color: 'primary.main', mb: 1 }}>{m.icon}</Box>
+                       <Typography variant="h3" sx={{ fontWeight: 600, mb: 1 }}>
+                         {m.value}
+                       </Typography>
+                       <Typography variant="caption" sx={{ color: 'onSurface.variant', textTransform: 'uppercase', letterSpacing: 1 }}>
+                         {m.label}
+                       </Typography>
+                     </CardContent>
+                   </Card>
+                </MuiTooltip>
+              ) : (
+                <Card
+                  sx={{ borderRadius: 1, boxShadow: 1, minWidth: 120, flex: 1, maxWidth: 200, cursor: m.onClick ? 'pointer' : 'default' }}
+                  key={m.label}
+                  onClick={m.onClick}
+                  role={m.onClick ? 'button' : undefined}
+                  aria-label={m.onClick ? `Open ${m.label} Grafana panel` : undefined}
+                >
+                   <CardContent sx={{ textAlign: 'center', py: 3 }}>
+                     <Box sx={{ color: 'primary.main', mb: 1 }}>{m.icon}</Box>
+                     <Typography variant="h3" sx={{ fontWeight: 600, mb: 1 }}>
+                       {m.value}
+                     </Typography>
+                     <Typography variant="caption" sx={{ color: 'onSurface.variant', textTransform: 'uppercase', letterSpacing: 1 }}>
+                       {m.label}
+                     </Typography>
+                   </CardContent>
+                 </Card>
+              )
             ))}
           </Box>
+          {/* Grafana パネルモーダル */}
+          <Dialog
+            open={grafanaOpen}
+            onClose={() => setGrafanaOpen(false)}
+            fullWidth
+            maxWidth="lg"
+            aria-labelledby="grafana-dialog-title"
+          >
+            <DialogTitle id="grafana-dialog-title" sx={{ pr: 5 }}>
+              サーバー数グラフ
+              <IconButton
+                aria-label="close"
+                onClick={() => setGrafanaOpen(false)}
+                sx={{ position: 'absolute', right: 8, top: 8 }}
+              >
+                <CloseIcon />
+              </IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 3 }}>
+              {promLoading && (
+                <Box sx={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>読み込み中…</Box>
+              )}
+              {promError && (
+                <Box sx={{ p: 3, color: 'error.main' }}>プロメテウスからデータを取得できませんでした: {promError}</Box>
+              )}
+              {!promLoading && !promError && chartData && (
+                <Box sx={{ width: '100%', height: 420 }}>
+                  <Line
+                    data={chartData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { position: 'bottom' } },
+                      scales: { x: { display: true }, y: { display: true } },
+                    }}
+                  />
+                </Box>
+              )}
+              {/* フォールバック: 元の Grafana を別タブで開くリンク */}
+              <Box sx={{ mt: 2, textAlign: 'right' }}>
+                <Button size="small" href={grafanaTarget} target="_blank" rel="noopener noreferrer">
+                  更に詳しく見る (Grafanaに移動します)
+                </Button>
+              </Box>
+            </DialogContent>
+          </Dialog>
         </Container>
 
         {/* Features */}
