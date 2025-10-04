@@ -60,208 +60,185 @@ class DictionaryCog(commands.Cog):
             return await self.voice_cog.is_banned(user_id)
         return False
 
-    # 辞書コマンド
-    @app_commands.command(name="dictionary", description="読み上げ辞書の管理")
-    @app_commands.describe(action="実行するアクション", key="辞書のキー", value="辞書の値")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="add", value="add"),
-        app_commands.Choice(name="remove", value="remove"),
-        app_commands.Choice(name="search", value="search"),
-        app_commands.Choice(name="list", value="list")
-    ])
-    async def dictionary(self, interaction: discord.Interaction, action: str, key: str = None, value: str = None):
+    # 辞書コマンドグループ
+    dictionary_group = app_commands.Group(name="dictionary", description="読み上げ辞書の管理")
+
+    @dictionary_group.command(name="add", description="読み上げ辞書を設定")
+    async def dictionary_add(self, interaction: discord.Interaction, key: str, value: str):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
+        try:
+            author_id = interaction.user.id  # 登録者のユーザーIDを取得
+            guild_id = interaction.guild.id
+            await self.db.upsert_dictionary(guild_id, key, value, author_id)
+            # キャッシュを即時反映
+            async with self.cache_lock:
+                self.server_dict_cache.pop(guild_id, None)
+            embed = discord.Embed(
+                title="辞書更新",
+                description=f"辞書に追加しました: **{key}** -> **{value}**",
+                color=discord.Color.green()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        action = action.lower()
-        if action == "add":
-            if not key or not value:
-                await interaction.response.send_message("addアクションにはkeyとvalueが必要です。", ephemeral=True)
-                return
-            try:
-                author_id = interaction.user.id
-                guild_id = interaction.guild.id
-                await self.db.upsert_dictionary(guild_id, key, value, author_id)
-                async with self.cache_lock:
-                    self.server_dict_cache.pop(guild_id, None)
+    @dictionary_group.command(name="remove", description="読み上げ辞書を削除")
+    async def dictionary_remove(self, interaction: discord.Interaction, key: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
+        try:
+            guild_id = interaction.guild.id
+            result = await self.db.remove_dictionary(guild_id, key)
+            # キャッシュを即時反映
+            async with self.cache_lock:
+                self.server_dict_cache.pop(guild_id, None)
+            if result == "DELETE 1":
                 embed = discord.Embed(
-                    title="辞書更新",
-                    description=f"辞書に追加しました: **{key}** -> **{value}**",
+                    title="辞書削除",
+                    description=f"辞書から削除しました: **{key}**",
                     color=discord.Color.green()
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=False)
-                return
-            except Exception as e:
+            else:
                 embed = discord.Embed(
                     title="エラー",
-                    description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                    description=f"指定されたキーが見つかりません: **{key}**",
                     color=discord.Color.red()
                 )
-                if interaction.response.is_done():
-                    await interaction.edit_original_response(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
+            await interaction.response.send_message(embed=embed, ephemeral=False)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        elif action == "remove":
-            if not key:
-                await interaction.response.send_message("removeアクションにはkeyが必要です。", ephemeral=True)
-                return
-            try:
-                guild_id = interaction.guild.id
-                result = await self.db.remove_dictionary(guild_id, key)
-                async with self.cache_lock:
-                    self.server_dict_cache.pop(guild_id, None)
-                if result == "DELETE 1":
-                    embed = discord.Embed(
-                        title="辞書削除",
-                        description=f"辞書から削除しました: **{key}**",
-                        color=discord.Color.green()
-                    )
+    @dictionary_group.command(name="search", description="読み上げ辞書を検索")
+    async def dictionary_search(self, interaction: discord.Interaction, key: str):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
+        try:
+            guild_id = interaction.guild.id
+            row = await self.db.get_dictionary_entry(guild_id, key)
+            if row:
+                author_id = row['author_id']
+                if interaction.user.id == 1241397634095120438:
+                    description = f"**{key}** -> **{row['value']}**\n登録者: <@{author_id}>"
                 else:
-                    embed = discord.Embed(
-                        title="エラー",
-                        description=f"指定されたキーが見つかりません: **{key}**",
-                        color=discord.Color.red()
-                    )
-                await interaction.response.send_message(embed=embed, ephemeral=False)
-                return
-            except Exception as e:
+                    description = f"**{key}** -> **{row['value']}**"
+                embed = discord.Embed(
+                    title="辞書検索結果",
+                    description=f"{description}",
+                    color=discord.Color.green()
+                )
+            else:
                 embed = discord.Embed(
                     title="エラー",
-                    description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                    description=f"指定されたキーが見つかりません: **{key}**",
                     color=discord.Color.red()
                 )
-                if interaction.response.is_done():
-                    await interaction.edit_original_response(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as e:
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
-        elif action == "search":
-            if not key:
-                await interaction.response.send_message("searchアクションにはkeyが必要です。", ephemeral=True)
-                return
-            try:
-                guild_id = interaction.guild.id
-                row = await self.db.get_dictionary_entry(guild_id, key)
-                if row:
-                    author_id = row['author_id']
-                    if interaction.user.id == 1241397634095120438:
-                        description = f"**{key}** -> **{row['value']}**\n登録者: <@{author_id}>"
-                    else:
-                        description = f"**{key}** -> **{row['value']}**"
-                    embed = discord.Embed(
-                        title="辞書検索結果",
-                        description=f"{description}",
-                        color=discord.Color.green()
-                    )
-                else:
-                    embed = discord.Embed(
-                        title="エラー",
-                        description=f"指定されたキーが見つかりません: **{key}**",
-                        color=discord.Color.red()
-                    )
+    @dictionary_group.command(name="list", description="サーバーの読み上げ辞書一覧を表示")
+    async def dictionary_list(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
+            return
+        try:
+            guild_id = interaction.guild.id
+            rows = await self.get_server_dict(guild_id)
+            if not rows:
+                embed = discord.Embed(
+                    title="📖 辞書一覧",
+                    description="このサーバーにはまだ辞書が登録されていません。\n`/dictionary add` コマンドで新しい単語を追加できます！",
+                    color=discord.Color.orange()
+                )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
-            except Exception as e:
+
+            # ページネーション設定
+            PAGE_SIZE = 20
+            pages = [rows[i:i+PAGE_SIZE] for i in range(0, len(rows), PAGE_SIZE)]
+
+            def make_embed(page_idx):
                 embed = discord.Embed(
-                    title="エラー",
-                    description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                    color=discord.Color.red()
+                    title=f"📖 サーバー辞書一覧",
+                    description=f"ページ {page_idx+1}/{len(pages)}\n",
+                    color=discord.Color.green()
                 )
-                if interaction.response.is_done():
-                    await interaction.edit_original_response(embed=embed)
-                else:
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-
-        elif action == "list":
-            try:
-                guild_id = interaction.guild.id
-                rows = await self.get_server_dict(guild_id)
-                if not rows:
-                    embed = discord.Embed(
-                        title="📖 辞書一覧",
-                        description="このサーバーにはまだ辞書が登録されていません。\n`/dictionary action:list` コマンドで確認できます！",
-                        color=discord.Color.orange()
+                for i, row in enumerate(pages[page_idx], start=1 + page_idx * PAGE_SIZE):
+                    embed.add_field(
+                        name=f"{i}. `{row['key']}` → `{row['value']}`",
+                        value="",
+                        inline=False
                     )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                    return
+                return embed
 
-                # ページネーション設定
-                PAGE_SIZE = 20
-                pages = [rows[i:i+PAGE_SIZE] for i in range(0, len(rows), PAGE_SIZE)]
+            class PaginationView(View):
+                def __init__(self):
+                    super().__init__(timeout=120)
+                    self.page = 0
+                    self.prev_button = Button(label="◀ 前へ", style=discord.ButtonStyle.secondary)
+                    self.next_button = Button(label="次へ ▶", style=discord.ButtonStyle.secondary)
+                    self.prev_button.callback = self.prev
+                    self.next_button.callback = self.next
+                    self.add_item(self.prev_button)
+                    self.add_item(self.next_button)
 
-                def make_embed(page_idx):
-                    embed = discord.Embed(
-                        title=f"📖 サーバー辞書一覧",
-                        description=f"ページ {page_idx+1}/{len(pages)}\n",
-                        color=discord.Color.green()
-                    )
-                    for i, row in enumerate(pages[page_idx], start=1 + page_idx * PAGE_SIZE):
-                        embed.add_field(
-                            name=f"{i}. `{row['key']}` → `{row['value']}`",
-                            value="",
-                            inline=False
-                        )
-                    return embed
+                async def update(self, interaction):
+                    embed = make_embed(self.page)
+                    await interaction.response.edit_message(embed=embed, view=self)
 
-                class PaginationView(View):
-                    def __init__(self):
-                        super().__init__(timeout=120)
-                        self.page = 0
-                        self.prev_button = Button(label="◀ 前へ", style=discord.ButtonStyle.secondary)
-                        self.next_button = Button(label="次へ ▶", style=discord.ButtonStyle.secondary)
-                        self.prev_button.callback = self.prev
-                        self.next_button.callback = self.next
-                        self.add_item(self.prev_button)
-                        self.add_item(self.next_button)
-
-                    async def update(self, interaction):
-                        embed = make_embed(self.page)
-                        await interaction.response.edit_message(embed=embed, view=self)
-
-                    async def prev(self, interaction: discord.Interaction):
-                        if self.page > 0:
-                            self.page -= 1
-                            await self.update(interaction)
-                        else:
-                            await interaction.response.defer()
-
-                    async def next(self, interaction: discord.Interaction):
-                        if self.page < len(pages) - 1:
-                            self.page += 1
-                            await self.update(interaction)
-                        else:
-                            await interaction.response.defer()
-
-                view = PaginationView() if len(pages) > 1 else None
-                if view:
-                    await interaction.response.send_message(embed=make_embed(0), view=view, ephemeral=True)
-                else:
-                    await interaction.response.send_message(embed=make_embed(0), ephemeral=True)
-                return
-            except Exception as e:
-                print(e)
-                embed = discord.Embed(
-                    title="エラー",
-                    description="エラーが発生しました。詳細は管理者にお問い合わせください。",
-                    color=discord.Color.red()
-                )
-                try:
-                    if interaction.response.is_done():
-                        await interaction.edit_original_response(embed=embed, view=None)
+                async def prev(self, interaction: discord.Interaction):
+                    if self.page > 0:
+                        self.page -= 1
+                        await self.update(interaction)
                     else:
-                        await interaction.response.send_message(embed=embed, ephemeral=True)
-                except Exception as inner_e:
-                    print(inner_e)
-                return
+                        await interaction.response.defer()
 
-        else:
-            await interaction.response.send_message("無効なアクションです。add, remove, search, listのいずれかを指定してください。", ephemeral=True)
-            return
+                async def next(self, interaction: discord.Interaction):
+                    if self.page < len(pages) - 1:
+                        self.page += 1
+                        await self.update(interaction)
+                    else:
+                        await interaction.response.defer()
+
+            view = PaginationView() if len(pages) > 1 else None
+            if view:
+                await interaction.response.send_message(embed=make_embed(0), view=view, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=make_embed(0), ephemeral=True)
+        except Exception as e:
+            print(e)  # ここでエラー内容を出力
+            embed = discord.Embed(
+                title="エラー",
+                description="エラーが発生しました。詳細は管理者にお問い合わせください。",
+                color=discord.Color.red()
+            )
+            # どちらでも送信できるように両方例外処理
+            try:
+                if interaction.response.is_done():
+                    await interaction.edit_original_response(embed=embed, view=None)
+                else:
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+            except Exception as inner_e:
+                print(inner_e)
 
     async def apply_dictionary(self, text: str, guild_id: int = None) -> str:
         """辞書を適用してテキストを変換（サーバーごと対応 & グローバル辞書対応）"""
@@ -292,8 +269,7 @@ class DictionaryCog(commands.Cog):
             rows = await self.get_server_dict(guild_id)
             for row in rows:
                 text = text.replace(row['key'], row['value'])
-        # 長さ制限：150文字を超えたら切り詰める
-        if len(text) > 150:
+        if len(text) > 70:
             text = text[:150] + "省略"
         return text
 
