@@ -60,8 +60,11 @@ class DictionaryCog(commands.Cog):
             return await self.voice_cog.is_banned(user_id)
         return False
 
-    @app_commands.command(name="dictionary", description="読み上げ辞書を設定")
-    async def dictionary(self, interaction: discord.Interaction, key: str, value: str):
+    # 辞書コマンドグループ
+    dictionary_group = app_commands.Group(name="dictionary", description="読み上げ辞書の管理")
+
+    @dictionary_group.command(name="add", description="読み上げ辞書を設定")
+    async def dictionary_add(self, interaction: discord.Interaction, key: str, value: str):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
@@ -86,7 +89,7 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="dictionary-remove", description="読み上げ辞書を削除")
+    @dictionary_group.command(name="remove", description="読み上げ辞書を削除")
     async def dictionary_remove(self, interaction: discord.Interaction, key: str):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
@@ -118,7 +121,7 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="dictionary-search", description="読み上げ辞書を検索")
+    @dictionary_group.command(name="search", description="読み上げ辞書を検索")
     async def dictionary_search(self, interaction: discord.Interaction, key: str):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
@@ -152,7 +155,7 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="dictionary-list", description="サーバーの読み上げ辞書一覧を表示")
+    @dictionary_group.command(name="list", description="サーバーの読み上げ辞書一覧を表示")
     async def dictionary_list(self, interaction: discord.Interaction):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
@@ -163,7 +166,7 @@ class DictionaryCog(commands.Cog):
             if not rows:
                 embed = discord.Embed(
                     title="📖 辞書一覧",
-                    description="このサーバーにはまだ辞書が登録されていません。\n`/dictionary` コマンドで新しい単語を追加できます！",
+                    description="このサーバーにはまだ辞書が登録されていません。\n`/dictionary add` コマンドで新しい単語を追加できます！",
                     color=discord.Color.orange()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
