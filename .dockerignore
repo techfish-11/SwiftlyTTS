@@ -1,0 +1,16 @@
+# Ignore typical files that are not needed in the image
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.git
+.gitignore
+node_modules/
+web/.next
+web/node_modules
+tmp/
+*.log
+*.env
