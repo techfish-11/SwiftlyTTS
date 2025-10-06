@@ -98,19 +98,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ steps.tag.outputs.image_tag }}
-          release_name: ${{ steps.tag.outputs.release_name }}
-          body: |
-            Docker image: ${{ steps.tag.outputs.image }}
-            Tag: ${{ steps.tag.outputs.image_tag }}
-            Digest: ${{ steps.build.outputs.digest }}
-            Pushed by: ${{ github.actor }}
-            Commit: ${{ github.sha }}
-          prerelease: ${{ github.event.inputs.prerelease || 'false' }}
-
       - name: Output image info
         run: |
           echo "Image: ${{ steps.tag.outputs.image }}"
