@@ -692,6 +692,24 @@ class VoiceReadCog(commands.Cog):
         attempt = 0
         backoff = 1.0
         async with lock:
+            # If there's already a connected VoiceClient in this guild, prefer to reuse it
+            existing_vc = channel.guild.voice_client
+            if existing_vc and getattr(existing_vc, "is_connected", lambda: False)():
+                try:
+                    # If already connected to the requested channel, just return it
+                    if getattr(existing_vc.channel, "id", None) == getattr(channel, "id", None):
+                        self.logger.info(f"Reusing existing VoiceClient for guild={guild_id}, channel={channel.id}")
+                        return existing_vc
+                    # Otherwise, disconnect the existing client before attempting a new connection
+                    self.logger.info(f"Found existing VoiceClient in another channel for guild={guild_id}, disconnecting it before connect()")
+                    try:
+                        await existing_vc.disconnect()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to disconnect existing VoiceClient for guild={guild_id}: {e}")
+                except Exception:
+                    # Defensive: ignore any unexpected attribute issues and continue to attempt connect
+                    pass
+
             while attempt < max_attempts:
                 attempt += 1
                 try:
@@ -717,6 +735,17 @@ class VoiceReadCog(commands.Cog):
                     backoff *= 2
                     continue
                 except Exception as e:
+                    # Special-case the common library message when a client already exists
+                    msg = str(e)
+                    if "Already connected to a voice channel" in msg:
+                        self.logger.warning(f"Connect called but already connected in guild={guild_id}; attempting to reuse existing client.")
+                        existing_vc = channel.guild.voice_client
+                        if existing_vc and getattr(existing_vc, "is_connected", lambda: False)():
+                            return existing_vc
+                        # If we couldn't find the existing client, just give up this attempt and retry
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
                     self.logger.error(f"Error connecting to VC (guild={guild_id}) attempt={attempt}: {e}")
                     await asyncio.sleep(backoff)
                     backoff *= 2
