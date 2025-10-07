@@ -1,0 +1,132 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2025-10-06T12:32:45+00:00",
+    "name": "SwiftlyTTS",
+    "author": "admin@techfish.dev",
+    "description": null,
+    "features": null,
+    "docker_images": {
+        "ghcr.io\/techfish-11\/swiftlytts-bot:sha-171d75f": "ghcr.io\/techfish-11\/swiftlytts-bot"
+    },
+    "file_denylist": [],
+    "startup": "echo starting...",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"Database connection successful!\"\r\n}",
+        "logs": "{}",
+        "stop": "^c"
+    },
+    "scripts": {
+        "installation": {
+            "script": null,
+            "container": "alpine:3.4",
+            "entrypoint": "ash"
+        }
+    },
+    "variables": [
+        {
+            "name": "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u30db\u30b9\u30c8IP",
+            "description": "",
+            "env_variable": "DB_HOST",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u30dd\u30fc\u30c8",
+            "description": "",
+            "env_variable": "DB_PORT",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u306e\u540d\u524d",
+            "description": "",
+            "env_variable": "DB_NAME",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u30e6\u30fc\u30b6\u30fc\u30cd\u30fc\u30e0",
+            "description": "",
+            "env_variable": "DB_USER",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u30d1\u30b9\u30ef\u30fc\u30c9",
+            "description": "",
+            "env_variable": "DB_PASSWORD",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "discord\u30c8\u30fc\u30af\u30f3",
+            "description": "",
+            "env_variable": "DISCORD_TOKEN",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u518d\u63a5\u7d9a\u3059\u308b\u304b",
+            "description": "",
+            "env_variable": "reconnect",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30b7\u30e3\u30fc\u30c9\u6570",
+            "description": "",
+            "env_variable": "SHARD_COUNT",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "\u30c7\u30d0\u30c3\u30b0\u304b\u3069\u3046\u304b",
+            "description": "",
+            "env_variable": "DEBUG",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        },
+        {
+            "name": "sentry DSN",
+            "description": "",
+            "env_variable": "SENTRY_DSN",
+            "default_value": "",
+            "user_viewable": false,
+            "user_editable": true,
+            "rules": "required|string|max:500",
+            "field_type": "text"
+        }
+    ]
+}
