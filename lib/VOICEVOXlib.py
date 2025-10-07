@@ -7,6 +7,7 @@ import time
 import shutil
 from prometheus_client import Gauge
 import random
+import logging  # 追加: エラーログ用
 
 # Load environment variables
 load_dotenv()
@@ -76,62 +77,71 @@ class VOICEVOXLib:
             output_path (str): Path to save the output WAV file.
             speed (float): Speed of the synthesized voice (default 1.0).
         """
-        base_url = self._choose_base_url()
-        async with aiohttp.ClientSession() as session:
-            start_time = time.perf_counter()  # 計測開始
+        # .envを毎回再読込してURLリストを更新
+        self.base_urls = self._load_base_urls()
+        for base_url in self.base_urls:  # 各URLを順番に試行
+            print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
+            try:
+                async with aiohttp.ClientSession() as session:
+                    start_time = time.perf_counter()  # 計測開始
 
-            # Step 1: Generate audio query
-            async with session.post(
-                f"{base_url}/audio_query",
-                params={"text": text, "speaker": speaker_id}
-            ) as query_response:
-                query_response.raise_for_status()
-                audio_query = await query_response.json()
-                # スピードを上書き
-                if "speedScale" in audio_query:
-                    audio_query["speedScale"] = speed
+                    # Step 1: Generate audio query
+                    async with session.post(
+                        f"{base_url}/audio_query",
+                        params={"text": text, "speaker": speaker_id}
+                    ) as query_response:
+                        query_response.raise_for_status()
+                        audio_query = await query_response.json()
+                        # スピードを上書き
+                        if "speedScale" in audio_query:
+                            audio_query["speedScale"] = speed
 
-            # Step 2: Synthesize audio
-            async with session.post(
-                f"{base_url}/synthesis",
-                params={"speaker": speaker_id},
-                json=audio_query
-            ) as synthesis_response:
-                synthesis_response.raise_for_status()
-                wav_bytes = await synthesis_response.read()
+                    # Step 2: Synthesize audio
+                    async with session.post(
+                        f"{base_url}/synthesis",
+                        params={"speaker": speaker_id},
+                        json=audio_query
+                    ) as synthesis_response:
+                        synthesis_response.raise_for_status()
+                        wav_bytes = await synthesis_response.read()
 
-            elapsed = time.perf_counter() - start_time  # 秒
+                    elapsed = time.perf_counter() - start_time  # 秒
 
-            # Step 3: Save WAV file and compute duration
-            with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
-                n_frames = wav_file.getnframes()
-                framerate = wav_file.getframerate()
-                duration_sec = n_frames / framerate if framerate else 0.0
+                    # Step 3: Save WAV file and compute duration
+                    with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                        n_frames = wav_file.getnframes()
+                        framerate = wav_file.getframerate()
+                        duration_sec = n_frames / framerate if framerate else 0.0
 
-                # Update Prometheus metric: seconds of processing per 1 minute of audio
-                if duration_sec > 0:
-                    seconds_per_minute = elapsed * 60.0 / duration_sec
-                else:
-                    seconds_per_minute = 0.0
-                try:
-                    VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
-                except Exception:
-                    # 安全のため例外は無視（メトリクス失敗で処理を止めない）
-                    pass
+                        # Update Prometheus metric: seconds of processing per 1 minute of audio
+                        if duration_sec > 0:
+                            seconds_per_minute = elapsed * 60.0 / duration_sec
+                        else:
+                            seconds_per_minute = 0.0
+                        try:
+                            VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
+                        except Exception:
+                            # 安全のため例外は無視（メトリクス失敗で処理を止めない）
+                            pass
 
-                # 出力先をプロジェクトルートの tmp ディレクトリに固定し、そのパスを返す
-                filename = os.path.basename(output_path)
-                if self.tmp_dir:
-                    tmp_output_path = os.path.join(self.tmp_dir, filename)
-                else:
-                    tmp_output_path = os.path.abspath(output_path)
+                        # 出力先をプロジェクトルートの tmp ディレクトリに固定し、そのパスを返す
+                        filename = os.path.basename(output_path)
+                        if self.tmp_dir:
+                            tmp_output_path = os.path.join(self.tmp_dir, filename)
+                        else:
+                            tmp_output_path = os.path.abspath(output_path)
 
-                # tmp に保存
-                with wave.open(tmp_output_path, "wb") as output_file:
-                    output_file.setparams(wav_file.getparams())
-                    output_file.writeframes(wav_file.readframes(n_frames))
+                        # tmp に保存
+                        with wave.open(tmp_output_path, "wb") as output_file:
+                            output_file.setparams(wav_file.getparams())
+                            output_file.writeframes(wav_file.readframes(n_frames))
 
-                return tmp_output_path
+                        return tmp_output_path
+            except aiohttp.ClientError as e:
+                logging.error(f"VOICEVOX synthesis failed for URL {base_url}: {e}")
+                continue  # 次のURLを試行
+        # すべてのURLで失敗した場合
+        raise RuntimeError(f"All VOICEVOX URLs failed for synthesis: {text[:50]}...")
 
     async def synthesize_bytes(self, text, speaker_id) -> bytes:
         """
@@ -144,45 +154,54 @@ class VOICEVOXLib:
         Returns:
             bytes: The synthesized speech audio data.
         """
-        base_url = self._choose_base_url()
-        async with aiohttp.ClientSession() as session:
-            start_time = time.perf_counter()  # 計測開始
-
-            # Step 1: Generate audio query
-            async with session.post(
-                f"{base_url}/audio_query",
-                params={"text": text, "speaker": speaker_id}
-            ) as query_response:
-                query_response.raise_for_status()
-                audio_query = await query_response.json()
-
-            # Step 2: Synthesize audio
-            async with session.post(
-                f"{base_url}/synthesis",
-                params={"speaker": speaker_id},
-                json=audio_query
-            ) as synthesis_response:
-                synthesis_response.raise_for_status()
-                wav_bytes = await synthesis_response.read()
-
-            elapsed = time.perf_counter() - start_time  # 秒
-
-            # Compute duration and set metric
+        # .envを毎回再読込してURLリストを更新
+        self.base_urls = self._load_base_urls()
+        for base_url in self.base_urls:  # 各URLを順番に試行
+            print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
             try:
-                with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
-                    n_frames = wav_file.getnframes()
-                    framerate = wav_file.getframerate()
-                    duration_sec = n_frames / framerate if framerate else 0.0
-                    if duration_sec > 0:
-                        seconds_per_minute = elapsed * 60.0 / duration_sec
-                    else:
-                        seconds_per_minute = 0.0
-                    VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
-            except Exception:
-                # 例外は無視して wav_bytes を返す（メトリクスの失敗で処理を止めない）
-                pass
+                async with aiohttp.ClientSession() as session:
+                    start_time = time.perf_counter()  # 計測開始
 
-            return wav_bytes
+                    # Step 1: Generate audio query
+                    async with session.post(
+                        f"{base_url}/audio_query",
+                        params={"text": text, "speaker": speaker_id}
+                    ) as query_response:
+                        query_response.raise_for_status()
+                        audio_query = await query_response.json()
+
+                    # Step 2: Synthesize audio
+                    async with session.post(
+                        f"{base_url}/synthesis",
+                        params={"speaker": speaker_id},
+                        json=audio_query
+                    ) as synthesis_response:
+                        synthesis_response.raise_for_status()
+                        wav_bytes = await synthesis_response.read()
+
+                    elapsed = time.perf_counter() - start_time  # 秒
+
+                    # Compute duration and set metric
+                    try:
+                        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                            n_frames = wav_file.getnframes()
+                            framerate = wav_file.getframerate()
+                            duration_sec = n_frames / framerate if framerate else 0.0
+                            if duration_sec > 0:
+                                seconds_per_minute = elapsed * 60.0 / duration_sec
+                            else:
+                                seconds_per_minute = 0.0
+                            VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
+                    except Exception:
+                        # 例外は無視して wav_bytes を返す（メトリクスの失敗で処理を止めない）
+                        pass
+
+                    return wav_bytes
+            except aiohttp.ClientError as e:
+                logging.error(f"VOICEVOX synthesize_bytes failed for URL {base_url}: {e}")
+                continue  # 次のURLを試行
+        # すべてのURLで失敗した場合
+        raise RuntimeError(f"All VOICEVOX URLs failed for synthesize_bytes: {text[:50]}...")
 
 # Example usage:
 # voicelib = VOICEVOXLib()
