@@ -4,6 +4,7 @@ import io
 import os
 from dotenv import load_dotenv
 import time
+import shutil
 from prometheus_client import Gauge
 import random
 
@@ -22,6 +23,21 @@ class VOICEVOXLib:
         self._default_url = "http://192.168.1.11:50021"
         # 初期化時は一度だけロード
         self.base_urls = self._load_base_urls()
+        # プロジェクトルートの tmp ディレクトリを確保
+        # lib ディレクトリの親をプロジェクトルートとみなし、その直下に tmp を作成する
+        try:
+            lib_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.abspath(os.path.join(lib_dir, ".."))
+            self.tmp_dir = os.path.join(project_root, "tmp")
+            os.makedirs(self.tmp_dir, exist_ok=True)
+        except Exception:
+            # 何らかの理由で作れない場合はカレントディレクトリの tmp を使う
+            self.tmp_dir = os.path.join(os.getcwd(), "tmp")
+            try:
+                os.makedirs(self.tmp_dir, exist_ok=True)
+            except Exception:
+                # 最終手段として tmp_dir を None にしておく
+                self.tmp_dir = None
 
     def _load_base_urls(self):
         # .envを毎回再読込
@@ -103,9 +119,19 @@ class VOICEVOXLib:
                     # 安全のため例外は無視（メトリクス失敗で処理を止めない）
                     pass
 
-                with wave.open(output_path, "wb") as output_file:
+                # 出力先をプロジェクトルートの tmp ディレクトリに固定し、そのパスを返す
+                filename = os.path.basename(output_path)
+                if self.tmp_dir:
+                    tmp_output_path = os.path.join(self.tmp_dir, filename)
+                else:
+                    tmp_output_path = os.path.abspath(output_path)
+
+                # tmp に保存
+                with wave.open(tmp_output_path, "wb") as output_file:
                     output_file.setparams(wav_file.getparams())
                     output_file.writeframes(wav_file.readframes(n_frames))
+
+                return tmp_output_path
 
     async def synthesize_bytes(self, text, speaker_id) -> bytes:
         """
