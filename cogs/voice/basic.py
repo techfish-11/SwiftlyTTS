@@ -208,17 +208,25 @@ class VoiceReadCog(commands.Cog):
 
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
-                tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用
+                tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 user_speaker_id = await self.get_user_speaker_id(interaction.user.id)
-                await self.voicelib.synthesize("接続しました。", user_speaker_id, tmp_wav)
+                try:
+                    saved_path = await self.voicelib.synthesize("接続しました。", user_speaker_id, tmp_wav)
+                except Exception:
+                    # 合成失敗は黙って戻る
+                    return
                 voice_client = interaction.guild.voice_client
                 if voice_client and not voice_client.is_playing():
-                    audio_source = discord.FFmpegPCMAudio(tmp_wav)
+                    audio_source = discord.FFmpegPCMAudio(saved_path)
                     voice_client.play(audio_source)
                     while voice_client.is_playing():
                         await asyncio.sleep(0.5)
-                if os.path.exists(tmp_wav):
-                    os.remove(tmp_wav)
+                # 再生後はライブラリが保存したファイルを削除
+                try:
+                    if saved_path and os.path.exists(saved_path):
+                        os.remove(saved_path)
+                except Exception:
+                    pass
 
             self.bot.loop.create_task(play_connection_message())
 
@@ -288,21 +296,28 @@ class VoiceReadCog(commands.Cog):
         if dictionary_cog:
             text = await dictionary_cog.apply_dictionary(text, interaction.guild.id)
         try:
-            tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用
+            tmp_wav = f"tmp/tmp_{uuid.uuid4()}_read.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
             speed = await self.db.get_server_voice_speed(interaction.guild.id)
             if speed is None:
                 speed = 1.0
-            await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
+            try:
+                saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
+            except Exception:
+                traceback.print_exc()
+                return
         except Exception:
             traceback.print_exc()
             return
         if not voice_client.is_playing():
-            audio_source = discord.FFmpegPCMAudio(tmp_wav)
+            audio_source = discord.FFmpegPCMAudio(saved_path)
             voice_client.play(audio_source)
             while voice_client.is_playing():
                 await asyncio.sleep(0.5)
-        if os.path.exists(tmp_wav):
-            os.remove(tmp_wav)
+        try:
+            if saved_path and os.path.exists(saved_path):
+                os.remove(saved_path)
+        except Exception:
+            pass
         embed = discord.Embed(
             title="再生完了",
             description="テキストの読み上げが完了しました。",
@@ -476,18 +491,26 @@ class VoiceReadCog(commands.Cog):
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
                 if dictionary_cog:
                     text = await dictionary_cog.apply_dictionary(text, guild_id)
-                tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用
+                tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
                     speed = 1.0
-                await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                try:
+                    saved_path = await self.voicelib.synthesize(text, speaker_id, tmp_wav, speed=speed)
+                except Exception as e:
+                    self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
+                    traceback.print_exc()
+                    continue
                 if not voice_client.is_playing():
-                    audio_source = discord.FFmpegPCMAudio(tmp_wav)
+                    audio_source = discord.FFmpegPCMAudio(saved_path)
                     voice_client.play(audio_source)
                     while voice_client.is_playing():
                         await asyncio.sleep(0.5)
-                if os.path.exists(tmp_wav):
-                    os.remove(tmp_wav)
+                try:
+                    if saved_path and os.path.exists(saved_path):
+                        os.remove(saved_path)
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 break  # タスクがキャンセルされた場合は終了
             except Exception as e:
@@ -669,6 +692,24 @@ class VoiceReadCog(commands.Cog):
         attempt = 0
         backoff = 1.0
         async with lock:
+            # If there's already a connected VoiceClient in this guild, prefer to reuse it
+            existing_vc = channel.guild.voice_client
+            if existing_vc and getattr(existing_vc, "is_connected", lambda: False)():
+                try:
+                    # If already connected to the requested channel, just return it
+                    if getattr(existing_vc.channel, "id", None) == getattr(channel, "id", None):
+                        self.logger.info(f"Reusing existing VoiceClient for guild={guild_id}, channel={channel.id}")
+                        return existing_vc
+                    # Otherwise, disconnect the existing client before attempting a new connection
+                    self.logger.info(f"Found existing VoiceClient in another channel for guild={guild_id}, disconnecting it before connect()")
+                    try:
+                        await existing_vc.disconnect()
+                    except Exception as e:
+                        self.logger.warning(f"Failed to disconnect existing VoiceClient for guild={guild_id}: {e}")
+                except Exception:
+                    # Defensive: ignore any unexpected attribute issues and continue to attempt connect
+                    pass
+
             while attempt < max_attempts:
                 attempt += 1
                 try:
@@ -694,6 +735,17 @@ class VoiceReadCog(commands.Cog):
                     backoff *= 2
                     continue
                 except Exception as e:
+                    # Special-case the common library message when a client already exists
+                    msg = str(e)
+                    if "Already connected to a voice channel" in msg:
+                        self.logger.warning(f"Connect called but already connected in guild={guild_id}; attempting to reuse existing client.")
+                        existing_vc = channel.guild.voice_client
+                        if existing_vc and getattr(existing_vc, "is_connected", lambda: False)():
+                            return existing_vc
+                        # If we couldn't find the existing client, just give up this attempt and retry
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
                     self.logger.error(f"Error connecting to VC (guild={guild_id}) attempt={attempt}: {e}")
                     await asyncio.sleep(backoff)
                     backoff *= 2

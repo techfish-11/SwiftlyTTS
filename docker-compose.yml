@@ -62,6 +62,9 @@ services:
       DB_NAME: ${DB_NAME:-swiftlytts}
       DB_USER: ${DB_USER:-swiftlytts}
       DB_PASSWORD: ${DB_PASSWORD:-swiftlytts}
+      # VOICEVOX サーバーの URL。デフォルトは compose 内の voicevox サービスを指す
+      # 環境変数や .env で上書き可能（例: VOICEVOX_URL=http://external-voicevox:50021）
+      VOICEVOX_URL: ${VOICEVOX_URL:-http://voicevox:50021}
       SHARD_COUNT: ${SHARD_COUNT:-3}
       # DISCORD_TOKEN は .env や環境変数で提供してください
     depends_on:
