@@ -144,7 +144,7 @@ class VOICEVOXLib:
         # すべてのURLで失敗した場合
         raise RuntimeError(f"All VOICEVOX URLs failed for synthesis: {text[:50]}...")
 
-    async def synthesize_bytes(self, text, speaker_id) -> bytes:
+    async def synthesize_bytes(self, text, speaker_id) -> tuple[str, bytes]:
         """
         Synthesize speech from text and return audio data as bytes.
 
@@ -153,7 +153,7 @@ class VOICEVOXLib:
             speaker_id (int): The ID of the speaker to use.
 
         Returns:
-            bytes: The synthesized speech audio data.
+            tuple[str, bytes]: The used base URL and the synthesized speech audio data.
         """
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
@@ -198,7 +198,7 @@ class VOICEVOXLib:
                         # 例外は無視して wav_bytes を返す（メトリクスの失敗で処理を止めない）
                         pass
 
-                    return wav_bytes
+                    return base_url, wav_bytes  # 変更: URL とバイトデータをタプルで返す
             except aiohttp.ClientError as e:
                 logging.error(f"VOICEVOX synthesize_bytes failed for URL {base_url}: {e}")
                 continue  # 次のURLを試行

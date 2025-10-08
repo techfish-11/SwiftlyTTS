@@ -2,13 +2,18 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from lib.postgres import PostgresDB
+from lib.VOICEVOXlib import VOICEVOXLib  # 追加: VOICEVOXLib をインポート
 import os
 from dotenv import load_dotenv
+import time
+import wave
+import io
 
 class AdminCog(commands.Cog):
-    def __init__(self, bot: commands.Bot, db: PostgresDB):
+    def __init__(self, bot: commands.Bot, db: PostgresDB, voicelib: VOICEVOXLib):  # 変更: voicelib を追加
         self.bot = bot
         self.db = db
+        self.voicelib = voicelib  # 追加: voicelib を保存
 
     def get_admin_id(self) -> int:
         load_dotenv()  # .envを毎回読み込む
@@ -109,12 +114,52 @@ class AdminCog(commands.Cog):
                 return
             await interaction.response.send_message(f"ユーザーID {user_id} に警告を送信しました。", ephemeral=True)
 
+        elif option == "bench":
+            # テキストをVOICEVOXで合成し、時間を計測
+            text = value.strip()
+            if not text:
+                await interaction.response.send_message("テキストを指定してください。", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True)  # 追加: 考え中を表示
+
+            speaker_id = 1
+            speed = 1.0
+
+            start_time = time.perf_counter()
+            try:
+                used_url, wav_bytes = await self.voicelib.synthesize_bytes(text, speaker_id)
+                elapsed = time.perf_counter() - start_time
+
+                # 音声長さを計算
+                with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                    n_frames = wav_file.getnframes()
+                    framerate = wav_file.getframerate()
+                    duration_sec = n_frames / framerate if framerate else 0.0
+
+                # embed で結果を表示
+                embed = discord.Embed(
+                    title="VOICEVOX ベンチマーク結果",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="テキスト", value=text, inline=False)
+                embed.add_field(name="処理時間 (秒)", value=f"{elapsed:.2f}", inline=True)
+                embed.add_field(name="音声長さ (秒)", value=f"{duration_sec:.2f}", inline=True)
+                embed.add_field(name="使用 VOICEVOX サーバー URL", value=used_url, inline=False)
+                embed.add_field(name="Speaker ID", value=str(speaker_id), inline=True)
+                embed.add_field(name="Speed", value=str(speed), inline=True)
+                await interaction.followup.send(embed=embed, ephemeral=True)  # 変更: followup で送信
+
+            except Exception as e:
+                await interaction.followup.send(f"ベンチマーク中にエラーが発生しました: {str(e)}", ephemeral=True)  # 変更: followup で送信
+
         else:
             await interaction.response.send_message(
-                "無効なオプションです。'ban', 'unban', 'voice', または 'warn' を指定してください。", ephemeral=True
+                "無効なオプションです。'ban', 'unban', 'voice', 'warn' または 'bench' を指定してください。", ephemeral=True
             )
 
 async def setup(bot: commands.Bot):
     db = PostgresDB()
     await db.initialize()
-    await bot.add_cog(AdminCog(bot, db))
+    voicelib = VOICEVOXLib()  # 追加: VOICEVOXLib を初期化
+    await bot.add_cog(AdminCog(bot, db, voicelib))  # 変更: voicelib を渡す
