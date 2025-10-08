@@ -80,7 +80,8 @@ class VOICEVOXLib:
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
         for base_url in self.base_urls:  # 各URLを順番に試行
-            print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
+            if os.getenv("DEBUG") == "1":
+                print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
             try:
                 async with aiohttp.ClientSession() as session:
                     start_time = time.perf_counter()  # 計測開始
@@ -157,7 +158,8 @@ class VOICEVOXLib:
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
         for base_url in self.base_urls:  # 各URLを順番に試行
-            print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
+            if os.getenv("DEBUG") == "1":
+                print(f"Using VOICEVOX URL: {base_url}")  # 追加: 使用するURLをprint
             try:
                 async with aiohttp.ClientSession() as session:
                     start_time = time.perf_counter()  # 計測開始
