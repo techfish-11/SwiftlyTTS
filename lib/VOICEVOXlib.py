@@ -21,7 +21,7 @@ VOICE_GENERATION_TIME_PER_MINUTE = Gauge(
 class VOICEVOXLib:
     def __init__(self, base_url=None):
         self._base_url_arg = base_url  # 引数を保存
-        self._default_url = "http://192.168.1.11:50021"
+        self._default_url = "http://localhost:50021"
         # 初期化時は一度だけロード
         self.base_urls = self._load_base_urls()
         # プロジェクトルートの tmp ディレクトリを確保
