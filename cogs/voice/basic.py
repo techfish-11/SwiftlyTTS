@@ -288,7 +288,7 @@ class VoiceReadCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @autojoin.command(name="on", description="自動参加を有効にします。現在参加しているVCと読み上げチャンネルをDBに保存します。")
+    @autojoin.command(name="on", description="自動参加を有効にします。設定したいVCに参加している必要があります。")
     async def autojoin_on(self, interaction: discord.Interaction):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
