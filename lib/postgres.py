@@ -64,6 +64,11 @@ class PostgresDB:
                     timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
                     guild_count INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS autojoin_config (
+                    guild_id BIGINT PRIMARY KEY,
+                    vc_channel_id BIGINT NOT NULL,
+                    tts_channel_id BIGINT NOT NULL
+                );
             """)
             # user_voice.speaker_id の型がintegerならtextにマイグレート
             col_info = await connection.fetchrow("""
@@ -214,6 +219,44 @@ class PostgresDB:
             return await connection.fetch(
                 "SELECT key, value FROM globaldic"
             )
+
+    async def get_autojoin(self, guild_id: int) -> Optional[asyncpg.Record]:
+        """Get the autojoin configuration for a specific guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetchrow(
+                "SELECT vc_channel_id, tts_channel_id FROM autojoin_config WHERE guild_id = $1",
+                guild_id
+            )
+
+    async def fetch_all_autojoin(self) -> List[asyncpg.Record]:
+        """Return all autojoin configurations."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetch("SELECT guild_id, vc_channel_id, tts_channel_id FROM autojoin_config")
+
+    async def set_autojoin(self, guild_id: int, vc_channel_id: int, tts_channel_id: int) -> None:
+        """Insert or update autojoin configuration for a guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO autojoin_config (guild_id, vc_channel_id, tts_channel_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id) DO UPDATE SET vc_channel_id = $2, tts_channel_id = $3
+                """,
+                guild_id, vc_channel_id, tts_channel_id
+            )
+
+    async def delete_autojoin(self, guild_id: int) -> str:
+        """Delete autojoin configuration for a guild."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.execute("DELETE FROM autojoin_config WHERE guild_id = $1", guild_id)
 
     async def insert_guild_count(self, guild_count: int) -> None:
         """サーバー数をserver_statsテーブルに記録し、1日経過したレコードを削除する"""

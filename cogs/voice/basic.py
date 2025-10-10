@@ -50,6 +50,7 @@ SPEAKER_LIST = [
 ]
 
 class VoiceReadCog(commands.Cog):
+    autojoin = app_commands.Group(name="autojoin", description="自動参加設定")
     def __init__(self, bot):
         self.bot = bot
         self.voicelib = VOICEVOXLib()
@@ -68,6 +69,8 @@ class VoiceReadCog(commands.Cog):
         self.task_restart_interval = 1800  # タスク再作成間隔（秒）
         self.voice_connect_timeout = int(os.getenv("VOICE_CONNECT_TIMEOUT", "60"))  # 接続タイムアウト（秒）
         self.sync_vcstate_task = None  # ← 追加: VC状態同期タスク
+        # ギルドごとの autojoin 設定キャッシュ: {guild.id: (vc_channel_id, tts_channel_id)}
+        self.autojoin_configs = {}
         self.logger = logging.getLogger(__name__)
 
         def handle_global_exception(loop, context):
@@ -85,6 +88,15 @@ class VoiceReadCog(commands.Cog):
         await self.db.initialize()  # データベース接続を初期化
         self.cleanup_task = self.bot.loop.create_task(self.cleanup_temp_files())
         self.banlist = set(await self.db.fetch_column("SELECT user_id FROM banlist"))  # BANリストをキャッシュ
+
+        # autojoin 設定をロード（DEBUGモードでもロードする）
+        try:
+            rows = await self.db.fetch("SELECT guild_id, vc_channel_id, tts_channel_id FROM autojoin_config")
+            for r in rows:
+                self.autojoin_configs[r['guild_id']] = (r['vc_channel_id'], r['tts_channel_id'])
+            self.logger.info(f"Loaded autojoin configs for {len(self.autojoin_configs)} guild(s)")
+        except Exception:
+            self.logger.exception("Failed to load autojoin configs")
 
         if self.debug_mode:
             self.logger.info("DEBUGモードのためVC状態復元をスキップします。")
@@ -275,6 +287,85 @@ class VoiceReadCog(commands.Cog):
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @autojoin.command(name="on", description="自動参加を有効にします。現在参加しているVCと読み上げチャンネルをDBに保存します。")
+    async def autojoin_on(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("先にボイスチャンネルに参加してください。", ephemeral=True)
+            return
+        guild = interaction.guild
+        vc_channel = interaction.user.voice.channel
+        tts_channel_id = interaction.channel.id
+        try:
+            await self.db.set_autojoin(guild.id, vc_channel.id, tts_channel_id)
+            self.autojoin_configs[guild.id] = (vc_channel.id, tts_channel_id)
+        except Exception as e:
+            self.logger.error(f"Failed to save autojoin config for guild {guild.id}: {e}")
+            traceback.print_exc()
+            await interaction.response.send_message("自動参加設定の保存中にエラーが発生しました。", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="Autojoin: ON",
+            description=(f"このサーバーは `{vc_channel.name}` にメンバーが参加したときに自動で参加するように設定されました。\n"
+                         f"読み上げチャンネル: <#{tts_channel_id}>") ,
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed)
+
+        # ユーザーが現在参加しているVCに今すぐ参加する
+        try:
+            voice_client = guild.voice_client
+            if not voice_client or not getattr(voice_client, 'is_connected', lambda: False)():
+                vc = await self._connect_voice(vc_channel)
+                if vc:
+                    # 接続後の初期化
+                    self.tts_channels[guild.id] = tts_channel_id
+                    self.message_queues[guild.id] = asyncio.Queue()
+                    self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+                    # DBにVC接続状態を記録
+                    await self.db.execute(
+                        "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
+                        guild.id, vc_channel.id, tts_channel_id
+                    )
+                    # 通知
+                    tts_channel = guild.get_channel(tts_channel_id)
+                    if tts_channel:
+                        try:
+                            notify_embed = discord.Embed(
+                                title="自動接続",
+                                description=f"自動参加が有効になったため、Botが {vc_channel.name} に参加しました。",
+                                color=discord.Color.green()
+                            )
+                            await tts_channel.send(embed=notify_embed)
+                        except Exception:
+                            self.logger.exception("Failed to send autojoin notification embed")
+        except Exception as e:
+            self.logger.error(f"Error while performing immediate autojoin for guild {guild.id}: {e}")
+            traceback.print_exc()
+
+    @autojoin.command(name="off", description="自動参加を無効にします。")
+    async def autojoin_off(self, interaction: discord.Interaction):
+        if await self.is_banned(interaction.user.id):
+            await interaction.response.send_message("このコマンドを実行する権限がありません。", ephemeral=True)
+            return
+        try:
+            await self.db.delete_autojoin(interaction.guild.id)
+            self.autojoin_configs.pop(interaction.guild.id, None)
+        except Exception as e:
+            self.logger.error(f"Failed to remove autojoin config for guild {interaction.guild.id}: {e}")
+            traceback.print_exc()
+            await interaction.response.send_message("自動参加設定の削除中にエラーが発生しました。", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title="Autojoin: OFF",
+            description="このサーバーの自動参加設定を無効にしました。",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="read", description="テキストを合成して読み上げる")
     async def read(self, interaction: discord.Interaction, text: str):
@@ -582,6 +673,49 @@ class VoiceReadCog(commands.Cog):
         try:
             guild = member.guild
             voice_client = guild.voice_client
+
+            # --- Autojoin: 指定VCにメンバーが参加したらBotも自動参加 ---
+            try:
+                # メンバーが参加したイベント（before=None, after!=None）の場合をチェック
+                if before.channel is None and after.channel is not None and not member.bot:
+                    cfg = self.autojoin_configs.get(guild.id)
+                    if cfg and after.channel and after.channel.id == cfg[0]:
+                        # 既に接続済みでなければ接続を試みる
+                        if not voice_client or not getattr(voice_client, 'is_connected', lambda: False)():
+                            try:
+                                vc = await self._connect_voice(after.channel)
+                                if vc:
+                                    self.logger.info(f"[Autojoin] Connected to VC for guild={guild.id}, channel={after.channel.id}")
+                                    # 初期化
+                                    self.tts_channels[guild.id] = cfg[1]
+                                    self.message_queues[guild.id] = self.message_queues.get(guild.id, asyncio.Queue())
+                                    if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
+                                        self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
+                                    # DBにVC接続状態を保存
+                                    try:
+                                        await self.db.execute(
+                                            "INSERT INTO vc_state (guild_id, channel_id, tts_channel_id) VALUES ($1, $2, $3) ON CONFLICT (guild_id) DO UPDATE SET channel_id = $2, tts_channel_id = $3",
+                                            guild.id, after.channel.id, cfg[1]
+                                        )
+                                    except Exception:
+                                        self.logger.exception("Failed to persist vc_state after autojoin")
+                                    # TTSチャンネルに通知
+                                    try:
+                                        tts_channel = guild.get_channel(cfg[1])
+                                        if tts_channel:
+                                            embed = discord.Embed(
+                                                title="自動接続",
+                                                description=f"{member.display_name} が {after.channel.name} に参加したため、Botが自動で参加しました。",
+                                                color=discord.Color.green()
+                                            )
+                                            await tts_channel.send(embed=embed)
+                                    except Exception:
+                                        self.logger.exception("Failed to send autojoin notification embed")
+                            except Exception:
+                                self.logger.exception(f"Error while autojoining VC for guild {guild.id}")
+            except Exception:
+                # 自動接続処理での例外はログ出力して続行
+                self.logger.exception("Unhandled error in autojoin check")
 
             # ボットのみになった場合は切断
             if voice_client and voice_client.channel and len(voice_client.channel.members) == 1:
