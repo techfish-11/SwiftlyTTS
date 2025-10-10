@@ -23,6 +23,13 @@ const commands = [
     example: "/join",
   },
   {
+    cmd: "/autojoin on /autojoin off",
+    title: "自動参加設定",
+    usage: "/autojoin on（VCに入った状態で実行） /autojoin off",
+    desc: "指定したVCにメンバーが参加したときにBotが自動で参加するように設定します。onで現在のVCと読み上げチャンネルをDBに保存、offで無効化します（サーバーごとに1チャンネルまで）。",
+    example: "/autojoin on",
+  },
+  {
     cmd: "/dictionary add",
     title: "辞書追加",
     usage: "/dictionary add 単語 よみかた",
