@@ -395,15 +395,19 @@ class VoiceReadCog(commands.Cog):
                 saved_path = await self.voicelib.synthesize(text, self.speaker_id, tmp_wav, speed=speed)
             except Exception:
                 traceback.print_exc()
+                self.bot.error_counter += 1  # エラーカウンターをインクリメント
                 return
         except Exception:
             traceback.print_exc()
+            self.bot.error_counter += 1  # エラーカウンターをインクリメント
             return
         if not voice_client.is_playing():
             audio_source = discord.FFmpegPCMAudio(saved_path)
             voice_client.play(audio_source)
             while voice_client.is_playing():
                 await asyncio.sleep(0.5)
+            # 読み上げ成功時にカウンターをインクリメント
+            self.bot.tts_counter += 1
         try:
             if saved_path and os.path.exists(saved_path):
                 os.remove(saved_path)
@@ -591,12 +595,15 @@ class VoiceReadCog(commands.Cog):
                 except Exception as e:
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
                     traceback.print_exc()
+                    self.bot.error_counter += 1  # エラーカウンターをインクリメント
                     continue
                 if not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(saved_path)
                     voice_client.play(audio_source)
                     while voice_client.is_playing():
                         await asyncio.sleep(0.5)
+                    # 読み上げ成功時にカウンターをインクリメント
+                    self.bot.tts_counter += 1
                 try:
                     if saved_path and os.path.exists(saved_path):
                         os.remove(saved_path)
@@ -607,6 +614,7 @@ class VoiceReadCog(commands.Cog):
             except Exception as e:
                 self.logger.error(f"Error in process_queue for guild {guild_id}: {e}")
                 traceback.print_exc()
+                self.bot.error_counter += 1  # エラーカウンターをインクリメント
                 continue  # その他のエラーは無視して次のメッセージへ
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
 

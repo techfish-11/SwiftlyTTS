@@ -34,6 +34,10 @@ bot = commands.AutoShardedBot(
     intents=intents
 )
 
+# メトリクス用のカウンターを初期化
+bot.tts_counter = 0
+bot.error_counter = 0
+
 # --- ここから同期的にコグを全ロード ---
 async def load_all_cogs():
     for root, _, files in os.walk('./cogs'):
