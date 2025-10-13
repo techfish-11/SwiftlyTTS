@@ -172,8 +172,14 @@ export default function Home() {
     {
       title: "インテリジェント辞書",
       tag: "無制限登録",
-      desc: "無制限な辞書でカスタム発音を即時適用。",
+      desc: "無制限なサーバーごとの辞書でカスタム発音を即時適用。",
       icon: <BookOpen color="primary" />,
+    },
+    {
+      title: "ユーザー辞書",
+      tag: "ギルド横断",
+      desc: "ギルドをまたいで使える個人辞書。登録したユーザーのみ適用。",
+      icon: <BookOpen color="secondary" />,
     },
     {
       title: "高速ネットワーク",
