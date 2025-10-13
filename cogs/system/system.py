@@ -13,7 +13,7 @@ from discord.ext import commands
 
 
 ROUTER_IP: Final[str] = "192.168.1.1"
-STATUS_URL: Final[str] = "https://status.sakana11.org"
+STATUS_URL: Final[str] = "https://status.swiftlybot.com/status/swiftlytts"
 TIMEOUT_SECONDS: Final[int] = 3
 RATE_LIMIT_SECONDS: Final[int] = 30
 

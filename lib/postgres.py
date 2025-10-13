@@ -69,6 +69,12 @@ class PostgresDB:
                     vc_channel_id BIGINT NOT NULL,
                     tts_channel_id BIGINT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS user_dictionary (
+                    user_id BIGINT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    PRIMARY KEY (user_id, key)
+                );
             """)
             # user_voice.speaker_id の型がintegerならtextにマイグレート
             col_info = await connection.fetchrow("""
@@ -271,8 +277,43 @@ class PostgresDB:
                     "DELETE FROM server_stats WHERE timestamp < (now() - INTERVAL '1 day')"
                 )
 
-# Example usage
-# db = PostgresDB()
-# await db.initialize()
-# await db.execute("INSERT INTO users (id, name) VALUES ($1, $2)", 1, "John Doe")
-# await db.close()
+    async def upsert_user_dictionary(self, user_id: int, key: str, value: str) -> None:
+        """Insert or update a user dictionary entry."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO user_dictionary (user_id, key, value)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, key) DO UPDATE SET value = $3
+                """,
+                user_id, key, value
+            )
+
+    async def remove_user_dictionary(self, user_id: int, key: str) -> str:
+        """Remove a user dictionary entry."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.execute(
+                "DELETE FROM user_dictionary WHERE user_id = $1 AND key = $2", user_id, key
+            )
+
+    async def get_user_dictionary_entry(self, user_id: int, key: str) -> Optional[asyncpg.Record]:
+        """Get a user dictionary entry."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetchrow(
+                "SELECT value FROM user_dictionary WHERE user_id = $1 AND key = $2", user_id, key
+            )
+
+    async def get_all_user_dictionary(self, user_id: int) -> List[asyncpg.Record]:
+        """Get all user dictionary entries for a user."""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            return await connection.fetch(
+                "SELECT key, value FROM user_dictionary WHERE user_id = $1", user_id
+            )

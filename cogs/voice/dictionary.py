@@ -14,6 +14,7 @@ class DictionaryCog(commands.Cog):
         self.voice_cog = None  # VoiceReadCogの参照
         self.global_dict_cache = []
         self.server_dict_cache = {}  # guild_id: list of dict rows
+        self.user_dict_cache = {}  # user_id: list of dict rows
         self.cache_lock = asyncio.Lock()
         self.cache_task = None
         self.cache_last_update = 0
@@ -54,6 +55,16 @@ class DictionaryCog(commands.Cog):
             self.server_dict_cache[guild_id] = rows
         return rows
 
+    async def get_user_dict(self, user_id):
+        async with self.cache_lock:
+            if user_id in self.user_dict_cache:
+                return self.user_dict_cache[user_id]
+        # キャッシュになければ取得してキャッシュ
+        rows = await self.db.get_all_user_dictionary(user_id)
+        async with self.cache_lock:
+            self.user_dict_cache[user_id] = rows
+        return rows
+
     async def is_banned(self, user_id: int) -> bool:
         """ユーザーがBANされているか確認"""
         if self.voice_cog:
@@ -63,23 +74,35 @@ class DictionaryCog(commands.Cog):
     # 辞書コマンドグループ
     dictionary_group = app_commands.Group(name="dictionary", description="読み上げ辞書の管理")
 
-    @dictionary_group.command(name="add", description="読み上げ辞書を設定")
-    async def dictionary_add(self, interaction: discord.Interaction, key: str, value: str):
+    @dictionary_group.command(name="add", description="読み上げ辞書を設定 (サーバーまたはユーザー)")
+    @app_commands.describe(user_dict="ユーザー辞書を使用するかどうか")
+    async def dictionary_add(self, interaction: discord.Interaction, key: str, value: str, user_dict: bool = False):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            author_id = interaction.user.id  # 登録者のユーザーIDを取得
-            guild_id = interaction.guild.id
-            await self.db.upsert_dictionary(guild_id, key, value, author_id)
-            # キャッシュを即時反映
-            async with self.cache_lock:
-                self.server_dict_cache.pop(guild_id, None)
-            embed = discord.Embed(
-                title="辞書更新",
-                description=f"辞書に追加しました: **{key}** -> **{value}**",
-                color=discord.Color.green()
-            )
+            if user_dict:
+                await self.db.upsert_user_dictionary(interaction.user.id, key, value)
+                # キャッシュを即時反映
+                async with self.cache_lock:
+                    self.user_dict_cache.pop(interaction.user.id, None)
+                embed = discord.Embed(
+                    title="ユーザー辞書更新",
+                    description=f"ユーザー辞書に追加しました: **{key}** -> **{value}**",
+                    color=discord.Color.green()
+                )
+            else:
+                author_id = interaction.user.id  # 登録者のユーザーIDを取得
+                guild_id = interaction.guild.id
+                await self.db.upsert_dictionary(guild_id, key, value, author_id)
+                # キャッシュを即時反映
+                async with self.cache_lock:
+                    self.server_dict_cache.pop(guild_id, None)
+                embed = discord.Embed(
+                    title="辞書更新",
+                    description=f"辞書に追加しました: **{key}** -> **{value}**",
+                    color=discord.Color.green()
+                )
             await interaction.response.send_message(embed=embed, ephemeral=False)
         except Exception as e:
             embed = discord.Embed(
@@ -89,20 +112,29 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @dictionary_group.command(name="remove", description="読み上げ辞書を削除")
-    async def dictionary_remove(self, interaction: discord.Interaction, key: str):
+    @dictionary_group.command(name="remove", description="読み上げ辞書を削除 (サーバーまたはユーザー)")
+    @app_commands.describe(user_dict="ユーザー辞書を使用するかどうか")
+    async def dictionary_remove(self, interaction: discord.Interaction, key: str, user_dict: bool = False):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            guild_id = interaction.guild.id
-            result = await self.db.remove_dictionary(guild_id, key)
-            # キャッシュを即時反映
-            async with self.cache_lock:
-                self.server_dict_cache.pop(guild_id, None)
+            if user_dict:
+                result = await self.db.remove_user_dictionary(interaction.user.id, key)
+                # キャッシュを即時反映
+                async with self.cache_lock:
+                    self.user_dict_cache.pop(interaction.user.id, None)
+                title = "ユーザー辞書削除"
+            else:
+                guild_id = interaction.guild.id
+                result = await self.db.remove_dictionary(guild_id, key)
+                # キャッシュを即時反映
+                async with self.cache_lock:
+                    self.server_dict_cache.pop(guild_id, None)
+                title = "辞書削除"
             if result == "DELETE 1":
                 embed = discord.Embed(
-                    title="辞書削除",
+                    title=title,
                     description=f"辞書から削除しました: **{key}**",
                     color=discord.Color.green()
                 )
@@ -121,23 +153,25 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @dictionary_group.command(name="search", description="読み上げ辞書を検索")
-    async def dictionary_search(self, interaction: discord.Interaction, key: str):
+    @dictionary_group.command(name="search", description="読み上げ辞書を検索 (サーバーまたはユーザー)")
+    @app_commands.describe(user_dict="ユーザー辞書を使用するかどうか")
+    async def dictionary_search(self, interaction: discord.Interaction, key: str, user_dict: bool = False):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            guild_id = interaction.guild.id
-            row = await self.db.get_dictionary_entry(guild_id, key)
+            if user_dict:
+                row = await self.db.get_user_dictionary_entry(interaction.user.id, key)
+                title = "ユーザー辞書検索結果"
+            else:
+                guild_id = interaction.guild.id
+                row = await self.db.get_dictionary_entry(guild_id, key)
+                title = "辞書検索結果"
             if row:
-                author_id = row['author_id']
-                if interaction.user.id == 1241397634095120438:
-                    description = f"**{key}** -> **{row['value']}**\n登録者: <@{author_id}>"
-                else:
-                    description = f"**{key}** -> **{row['value']}**"
+                description = f"**{key}** -> **{row['value']}**"
                 embed = discord.Embed(
-                    title="辞書検索結果",
-                    description=f"{description}",
+                    title=title,
+                    description=description,
                     color=discord.Color.green()
                 )
             else:
@@ -155,18 +189,26 @@ class DictionaryCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @dictionary_group.command(name="list", description="サーバーの読み上げ辞書一覧を表示")
-    async def dictionary_list(self, interaction: discord.Interaction):
+    @dictionary_group.command(name="list", description="読み上げ辞書一覧を表示 (サーバーまたはユーザー)")
+    @app_commands.describe(user_dict="ユーザー辞書を使用するかどうか")
+    async def dictionary_list(self, interaction: discord.Interaction, user_dict: bool = False):
         if await self.is_banned(interaction.user.id):
             await interaction.response.send_message("あなたはbotからBANされています。", ephemeral=True)
             return
         try:
-            guild_id = interaction.guild.id
-            rows = await self.get_server_dict(guild_id)
+            if user_dict:
+                rows = await self.get_user_dict(interaction.user.id)
+                title = "📖 ユーザー辞書一覧"
+                empty_description = "あなたのユーザー辞書にはまだ辞書が登録されていません。\n`/dictionary add user_dict:True` コマンドで新しい単語を追加できます！"
+            else:
+                guild_id = interaction.guild.id
+                rows = await self.get_server_dict(guild_id)
+                title = "📖 サーバー辞書一覧"
+                empty_description = "このサーバーにはまだ辞書が登録されていません。\n`/dictionary add` コマンドで新しい単語を追加できます！"
             if not rows:
                 embed = discord.Embed(
-                    title="📖 辞書一覧",
-                    description="このサーバーにはまだ辞書が登録されていません。\n`/dictionary add` コマンドで新しい単語を追加できます！",
+                    title=title,
+                    description=empty_description,
                     color=discord.Color.orange()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -178,7 +220,7 @@ class DictionaryCog(commands.Cog):
 
             def make_embed(page_idx):
                 embed = discord.Embed(
-                    title=f"📖 サーバー辞書一覧",
+                    title=title,
                     description=f"ページ {page_idx+1}/{len(pages)}\n",
                     color=discord.Color.green()
                 )
@@ -268,6 +310,12 @@ class DictionaryCog(commands.Cog):
         if guild_id is not None:
             rows = await self.get_server_dict(guild_id)
             for row in rows:
+                text = text.replace(row['key'], row['value'])
+        # ユーザー辞書適用
+        user_id = msg.author.id if msg else None
+        if user_id is not None:
+            user_rows = await self.get_user_dict(user_id)
+            for row in user_rows:
                 text = text.replace(row['key'], row['value'])
         if len(text) > 70:
             text = text[:150] + "省略"
