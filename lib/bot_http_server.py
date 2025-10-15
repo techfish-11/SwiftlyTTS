@@ -68,3 +68,28 @@ async def notify_user_dictionary(request: Request):
             except Exception as e:
                 print(f"[Notify] cache clear error: {e}")
     return {"ok": True}
+
+
+# ギルド辞書変更通知
+@app.post("/guild-dictionary/notify")
+async def notify_guild_dictionary(request: Request):
+    print("[Notify] Received guild dictionary change notification")
+    data = await request.json()
+    guild_id = data.get("guild_id")
+    print(f"[Notify] guild_dictionary changed for guild_id={guild_id}")
+    # --- キャッシュクリア処理 ---
+    if _bot is not None and guild_id is not None:
+        cog = _bot.get_cog("DictionaryCog")
+        if cog is not None:
+            try:
+                async def clear_cache():
+                    async with cog.cache_lock:
+                        cog.server_dict_cache.pop(int(guild_id), None)
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.run_coroutine_threadsafe(clear_cache(), loop)
+                else:
+                    loop.run_until_complete(clear_cache())
+            except Exception as e:
+                print(f"[Notify] guild cache clear error: {e}")
+    return {"ok": True}

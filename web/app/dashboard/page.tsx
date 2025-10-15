@@ -27,12 +27,65 @@ import MenuItem from "@mui/material/MenuItem";
 import Chip from "@mui/material/Chip";
 
 type UserDictionaryEntry = { key: string; value: string };
+type Guild = { id: string; name: string };
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   // ユーザー辞書管理用state
+  // ギルド辞書管理用state
+  const [guilds, setGuilds] = useState<Guild[]>([]);
+  const [guildsLoading, setGuildsLoading] = useState(false);
+  const [guildsError, setGuildsError] = useState<string|null>(null);
+  const [selectedGuild, setSelectedGuild] = useState<string>("");
+  const [guildDictionary, setGuildDictionary] = useState<UserDictionaryEntry[]>([]);
+  const [guildDictKey, setGuildDictKey] = useState("");
+  const [guildDictValue, setGuildDictValue] = useState("");
+  const [guildDictEditKey, setGuildDictEditKey] = useState<string|null>(null);
+  const [guildDictEditValue, setGuildDictEditValue] = useState("");
+  const [guildDictLoading, setGuildDictLoading] = useState(false);
+  const [guildDictError, setGuildDictError] = useState<string|null>(null);
+  // ユーザーの所属ギルド一覧取得
+  const fetchGuilds = React.useCallback(async (force?: boolean) => {
+    setGuildsLoading(true);
+    setGuildsError(null);
+    try {
+      const url = force ? "/api/servers?force=1" : "/api/servers";
+      const res = await fetch(url);
+      const data = await res.json();
+      if (res.ok) {
+        setGuilds(data.servers || []);
+        // デフォルトで最初のギルドを選択
+        if (data.servers && data.servers.length > 0 && !selectedGuild) {
+          setSelectedGuild(data.servers[0].id);
+        }
+      } else {
+        setGuilds([]);
+        setGuildsError(data.error || "サーバー一覧の取得に失敗しました");
+      }
+    } catch {
+      setGuilds([]);
+      setGuildsError("サーバー一覧の取得に失敗しました");
+    } finally {
+      setGuildsLoading(false);
+    }
+  }, [selectedGuild]);
+
+  // 選択ギルドの辞書取得
+  const fetchGuildDictionary = async (guildId: string) => {
+    setGuildDictLoading(true);
+    setGuildDictError(null);
+    try {
+      const res = await fetch(`/api/guild-dictionary?guild_id=${guildId}`);
+      const data = await res.json();
+      setGuildDictionary(data.dictionary || []);
+    } catch {
+      setGuildDictError("ギルド辞書の取得に失敗しました");
+    } finally {
+      setGuildDictLoading(false);
+    }
+  };
   const [userDictionary, setUserDictionary] = useState<UserDictionaryEntry[]>([]);
   const [dictKey, setDictKey] = useState("");
   const [dictValue, setDictValue] = useState("");
@@ -50,7 +103,7 @@ export default function DashboardPage() {
       const res = await fetch("/api/user-dictionary");
       const data = await res.json();
       setUserDictionary(data.dictionary || []);
-    } catch (e) {
+    } catch {
       setDictError("ユーザー辞書の取得に失敗しました");
     } finally {
       setDictLoading(false);
@@ -66,8 +119,86 @@ export default function DashboardPage() {
   useEffect(() => {
     if (status === "authenticated") {
       fetchUserDictionary();
+      fetchGuilds();
     }
-  }, [status]);
+  }, [status, fetchGuilds]);
+
+  // ギルド選択時に辞書取得
+  useEffect(() => {
+    if (selectedGuild) {
+      fetchGuildDictionary(selectedGuild);
+    }
+  }, [selectedGuild]);
+  // ギルド辞書エントリ追加
+  const handleAddGuildDictionary = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guildDictKey || !guildDictValue || !selectedGuild) return;
+    setGuildDictLoading(true);
+    setGuildDictError(null);
+    try {
+      const res = await fetch("/api/guild-dictionary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guild_id: selectedGuild, key: guildDictKey, value: guildDictValue }),
+      });
+      if (!res.ok) throw new Error();
+      setGuildDictKey("");
+      setGuildDictValue("");
+      fetchGuildDictionary(selectedGuild);
+    } catch {
+      setGuildDictError("追加に失敗しました");
+    } finally {
+      setGuildDictLoading(false);
+    }
+  };
+
+  // ギルド辞書エントリ編集開始
+  const handleEditGuildStart = (key: string, value: string) => {
+    setGuildDictEditKey(key);
+    setGuildDictEditValue(value);
+  };
+
+  // ギルド辞書エントリ編集保存
+  const handleEditGuildSave = async () => {
+    if (!guildDictEditKey || !selectedGuild) return;
+    setGuildDictLoading(true);
+    setGuildDictError(null);
+    try {
+      const res = await fetch("/api/guild-dictionary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guild_id: selectedGuild, key: guildDictEditKey, value: guildDictEditValue }),
+      });
+      if (!res.ok) throw new Error();
+      setGuildDictEditKey(null);
+      setGuildDictEditValue("");
+      fetchGuildDictionary(selectedGuild);
+    } catch {
+      setGuildDictError("編集に失敗しました");
+    } finally {
+      setGuildDictLoading(false);
+    }
+  };
+
+  // ギルド辞書エントリ削除
+  const handleDeleteGuildDictionary = async (key: string) => {
+    if (!window.confirm("本当に削除しますか？")) return;
+    setGuildDictLoading(true);
+    setGuildDictError(null);
+    try {
+      const res = await fetch("/api/guild-dictionary", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ guild_id: selectedGuild, key }),
+      });
+      if (!res.ok) throw new Error();
+      fetchGuildDictionary(selectedGuild);
+    } catch {
+      setGuildDictError("削除に失敗しました");
+    } finally {
+      setGuildDictLoading(false);
+    }
+  };
 
   // 辞書エントリ追加
   const handleAddDictionary = async (e: React.FormEvent) => {
@@ -225,6 +356,180 @@ export default function DashboardPage() {
                 <Chip label="ログイン済み" size="small" sx={{ mt: 0.5, bgcolor: "#e8f5e9", color: "#2e7d32", fontWeight: 500 }} />
               </Box>
             </Box>
+          </CardContent>
+        </Card>
+
+        {/* ギルド辞書管理カード */}
+        <Card elevation={0} sx={{ border: 1, borderColor: "divider", mb: 4 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 500, mb: 0.5 }}>
+              ギルド辞書
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              参加しているサーバーの辞書を管理します
+            </Typography>
+
+            {/* ギルド選択・ローディング・エラー表示 */}
+            <Box sx={{ mb: 2, display: "flex", alignItems: "center", gap: 2 }}>
+              {guildsLoading ? (
+                <Typography sx={{ py: 2 }}>サーバー一覧取得中…</Typography>
+              ) : guildsError ? (
+                <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: "#fdecea", border: 1, borderColor: "#f5c6cb" }}>
+                  <Typography variant="body2" color="error">{guildsError}</Typography>
+                </Paper>
+              ) : (
+                <TextField
+                  select
+                  label="サーバー選択"
+                  value={selectedGuild}
+                  onChange={e => setSelectedGuild(e.target.value)}
+                  size="small"
+                  sx={{ minWidth: 240, bgcolor: "white" }}
+                  disabled={guilds.length === 0}
+                >
+                  {guilds.map(g => (
+                    <MenuItem key={g.id} value={g.id}>{g.name}</MenuItem>
+                  ))}
+                </TextField>
+              )}
+              <Button
+                variant="outlined"
+                size="small"
+                sx={{ ml: 1, minWidth: 120 }}
+                onClick={() => fetchGuilds(true)}
+                disabled={guildsLoading}
+              >
+                ギルドキャッシュ再読み込み
+              </Button>
+            </Box>
+
+            {guildDictError && (
+              <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: "#fdecea", border: 1, borderColor: "#f5c6cb" }}>
+                <Typography variant="body2" color="error">{guildDictError}</Typography>
+              </Paper>
+            )}
+
+            {/* 追加フォーム */}
+            <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: "#f5f5f5" }}>
+              <form onSubmit={handleAddGuildDictionary}>
+                <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
+                  <TextField
+                    size="small"
+                    label="キー"
+                    value={guildDictKey}
+                    onChange={e => setGuildDictKey(e.target.value)}
+                    disabled={guildDictLoading || !selectedGuild}
+                    sx={{ width: 200, bgcolor: "white" }}
+                  />
+                  <TextField
+                    size="small"
+                    label="値（読み方）"
+                    value={guildDictValue}
+                    onChange={e => setGuildDictValue(e.target.value)}
+                    disabled={guildDictLoading || !selectedGuild}
+                    sx={{ width: 280, bgcolor: "white" }}
+                  />
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    disabled={guildDictLoading || !guildDictKey || !guildDictValue || !selectedGuild}
+                    sx={{
+                      bgcolor: "#1976d2",
+                      textTransform: "none",
+                      boxShadow: "none",
+                      "&:hover": { boxShadow: 1 }
+                    }}
+                  >
+                    追加
+                  </Button>
+                </Box>
+              </form>
+            </Paper>
+
+            {/* 辞書テーブル */}
+            {guildDictLoading ? (
+              <Typography>読み込み中…</Typography>
+            ) : guildDictionary.length === 0 ? (
+              <Box sx={{ textAlign: "center", py: 4 }}>
+                <Typography variant="body2" color="text.secondary">
+                  辞書エントリがありません。上のフォームから追加してください。
+                </Typography>
+              </Box>
+            ) : (
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.875rem" }}>キー</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.875rem" }}>読み方</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, color: "text.secondary", fontSize: "0.875rem" }}>操作</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {guildDictionary.map((entry) => (
+                      <TableRow key={entry.key} hover>
+                        <TableCell sx={{ fontWeight: 500 }}>{entry.key}</TableCell>
+                        <TableCell>
+                          {guildDictEditKey === entry.key ? (
+                            <TextField
+                              size="small"
+                              value={guildDictEditValue}
+                              onChange={e => setGuildDictEditValue(e.target.value)}
+                              disabled={guildDictLoading}
+                              fullWidth
+                            />
+                          ) : (
+                            entry.value
+                          )}
+                        </TableCell>
+                        <TableCell align="right">
+                          {guildDictEditKey === entry.key ? (
+                            <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+                              <Button
+                                size="small"
+                                onClick={handleEditGuildSave}
+                                disabled={guildDictLoading}
+                                sx={{ textTransform: "none" }}
+                              >
+                                保存
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => setGuildDictEditKey(null)}
+                                disabled={guildDictLoading}
+                                sx={{ textTransform: "none" }}
+                              >
+                                キャンセル
+                              </Button>
+                            </Box>
+                          ) : (
+                            <Box sx={{ display: "flex", gap: 1, justifyContent: "flex-end" }}>
+                              <Button
+                                size="small"
+                                onClick={() => handleEditGuildStart(entry.key, entry.value)}
+                                disabled={guildDictLoading}
+                                sx={{ textTransform: "none" }}
+                              >
+                                編集
+                              </Button>
+                              <Button
+                                size="small"
+                                color="error"
+                                onClick={() => handleDeleteGuildDictionary(entry.key)}
+                                disabled={guildDictLoading}
+                                sx={{ textTransform: "none" }}
+                              >
+                                削除
+                              </Button>
+                            </Box>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </CardContent>
         </Card>
 
