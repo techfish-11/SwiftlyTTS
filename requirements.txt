@@ -9,3 +9,5 @@ PyNaCl
 prometheus_client
 uvloop 
 sentry-sdk
+fastapi
+uvicorn

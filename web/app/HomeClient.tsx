@@ -323,6 +323,20 @@ export default function Home() {
               >
                 コマンド一覧
               </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                href="/auth/signin"
+                sx={{
+                  px: 4,
+                  py: 1.5,
+                  borderRadius: -10,
+                  textTransform: 'none',
+                }}
+              >
+                Webダッシュボードログイン
+              </Button>
+
             </Box>
           </Box>
 

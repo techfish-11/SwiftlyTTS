@@ -8,3 +8,5 @@ voicevox-client
 PyNaCl
 prometheus_client
 sentry-sdk
+fastapi
+uvicorn
