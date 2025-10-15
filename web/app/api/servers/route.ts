@@ -46,7 +46,7 @@ export async function GET(request: Request) {
   let lastError = null;
   for (let i = 0; i < 1; i++) { // 1回までリトライ（高速化）
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2秒タイムアウト
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
     try {
       res = await fetch("https://discord.com/api/v10/users/@me/guilds", {
         headers: {
