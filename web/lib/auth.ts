@@ -6,7 +6,7 @@ export const authOptions = {
       clientId: process.env.DISCORD_CLIENT_ID!,
       clientSecret: process.env.DISCORD_CLIENT_SECRET!,
       // request guilds scope so we can read user's guilds
-      authorization: { params: { scope: "identify email guilds" } },
+      authorization: { params: { scope: "identify guilds" } },
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
