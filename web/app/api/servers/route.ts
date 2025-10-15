@@ -93,7 +93,17 @@ export async function GET(request: Request) {
     }
     // 完了時はサーバーリストも返す
     if (job.status === "done") {
-      return NextResponse.json({ status: "done", servers: job.servers });
+      // クッキーをセット
+      const cacheValue = encodeURIComponent(JSON.stringify({
+        servers: job.servers,
+        timestamp: job.created,
+      }));
+      const res = NextResponse.json({ status: "done", servers: job.servers });
+      res.headers.set(
+        "Set-Cookie",
+        `guilds_cache=${cacheValue}; Path=/; Max-Age=300; SameSite=Lax`
+      );
+      return res;
     }
     if (job.status === "error") {
       return NextResponse.json({ status: "error", error: job.error }, { status: 500 });
@@ -144,12 +154,21 @@ export async function GET(request: Request) {
       });
       return;
     }
-    // Cookieキャッシュも更新（未使用なので削除）
+    // Cookieキャッシュも更新
     await saveJob(newJobId, {
       status: "done",
       servers: result.servers,
       created: Date.now(),
     });
+    // クッキー保存
+    // クッキー値はJSONをエンコード
+    const cacheValue = encodeURIComponent(JSON.stringify({
+      servers: result.servers,
+      timestamp: Date.now(),
+    }));
+    // サーバー側でレスポンスにクッキーをセット
+    // ただしAPI Routeのバックグラウンド処理なので、クッキーはdone時に返す必要あり
+    // → job_id指定時のdoneレスポンスでクッキーを返す
   })();
 
   // 即時レスポンス: job_idを返す

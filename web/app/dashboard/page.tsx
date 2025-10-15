@@ -54,27 +54,28 @@ export default function DashboardPage() {
     setGuildsPolling(false);
     try {
       const url = force ? "/api/servers?force=1" : "/api/servers";
-      const res = await fetch(url);
+      const res = await fetch(url, { credentials: "include" }); // ← 追加
       const data = await res.json();
       if (res.ok && data.servers) {
         setGuilds(data.servers || []);
-        if (data.servers && data.servers.length > 0 && !selectedGuild) {
-          setSelectedGuild(data.servers[0].id);
-        }
+        // サーバー選択時に再取得しないようにselectedGuild依存を外す
+        // if (data.servers && data.servers.length > 0 && !selectedGuild) {
+        //   setSelectedGuild(data.servers[0].id);
+        // }
+        // サーバー選択は初回のみ自動選択
+        setSelectedGuild(prev => prev || (data.servers && data.servers.length > 0 ? data.servers[0].id : ""));
       } else if (data.status === "pending" && data.job_id) {
         // ポーリング開始
         setGuildsPolling(true);
         let tries = 0;
         const poll = async () => {
           tries++;
-          const pollRes = await fetch(`/api/servers?job_id=${data.job_id}`);
+          const pollRes = await fetch(`/api/servers?job_id=${data.job_id}`, { credentials: "include" }); // ← 追加
           const pollData = await pollRes.json();
           if (pollData.status === "done" && pollData.servers) {
             setGuilds(pollData.servers || []);
             setGuildsPolling(false);
-            if (pollData.servers && pollData.servers.length > 0 && !selectedGuild) {
-              setSelectedGuild(pollData.servers[0].id);
-            }
+            setSelectedGuild(prev => prev || (pollData.servers && pollData.servers.length > 0 ? pollData.servers[0].id : ""));
           } else if (pollData.status === "error") {
             setGuilds([]);
             setGuildsError(pollData.error || "サーバー一覧の取得に失敗しました");
@@ -98,7 +99,7 @@ export default function DashboardPage() {
     } finally {
       setGuildsLoading(false);
     }
-  }, [selectedGuild]);
+  }, []); // ← selectedGuildを依存配列から除外
 
   // 選択ギルドの辞書取得
   const fetchGuildDictionary = async (guildId: string) => {
@@ -151,7 +152,7 @@ export default function DashboardPage() {
     }
   }, [status, fetchGuilds]);
 
-  // ギルド選択時に辞書取得
+  // ギルド選択時に辞書取得のみ
   useEffect(() => {
     if (selectedGuild) {
       fetchGuildDictionary(selectedGuild);
