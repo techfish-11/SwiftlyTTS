@@ -38,6 +38,7 @@ export default function DashboardPage() {
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [guildsLoading, setGuildsLoading] = useState(false);
   const [guildsError, setGuildsError] = useState<string|null>(null);
+  const [guildsPolling, setGuildsPolling] = useState(false);
   const [selectedGuild, setSelectedGuild] = useState<string>("");
   const [guildDictionary, setGuildDictionary] = useState<UserDictionaryEntry[]>([]);
   const [guildDictKey, setGuildDictKey] = useState("");
@@ -46,20 +47,47 @@ export default function DashboardPage() {
   const [guildDictEditValue, setGuildDictEditValue] = useState("");
   const [guildDictLoading, setGuildDictLoading] = useState(false);
   const [guildDictError, setGuildDictError] = useState<string|null>(null);
-  // ユーザーの所属ギルド一覧取得
+  // ユーザーの所属ギルド一覧取得（ポーリング対応）
   const fetchGuilds = React.useCallback(async (force?: boolean) => {
     setGuildsLoading(true);
     setGuildsError(null);
+    setGuildsPolling(false);
     try {
       const url = force ? "/api/servers?force=1" : "/api/servers";
       const res = await fetch(url);
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.servers) {
         setGuilds(data.servers || []);
-        // デフォルトで最初のギルドを選択
         if (data.servers && data.servers.length > 0 && !selectedGuild) {
           setSelectedGuild(data.servers[0].id);
         }
+      } else if (data.status === "pending" && data.job_id) {
+        // ポーリング開始
+        setGuildsPolling(true);
+        let tries = 0;
+        const poll = async () => {
+          tries++;
+          const pollRes = await fetch(`/api/servers?job_id=${data.job_id}`);
+          const pollData = await pollRes.json();
+          if (pollData.status === "done" && pollData.servers) {
+            setGuilds(pollData.servers || []);
+            setGuildsPolling(false);
+            if (pollData.servers && pollData.servers.length > 0 && !selectedGuild) {
+              setSelectedGuild(pollData.servers[0].id);
+            }
+          } else if (pollData.status === "error") {
+            setGuilds([]);
+            setGuildsError(pollData.error || "サーバー一覧の取得に失敗しました");
+            setGuildsPolling(false);
+          } else if (tries < 20) {
+            setTimeout(poll, 1000);
+          } else {
+            setGuilds([]);
+            setGuildsError("サーバー一覧の取得にタイムアウトしました");
+            setGuildsPolling(false);
+          }
+        };
+        poll();
       } else {
         setGuilds([]);
         setGuildsError(data.error || "サーバー一覧の取得に失敗しました");
@@ -371,8 +399,10 @@ export default function DashboardPage() {
 
             {/* ギルド選択・ローディング・エラー表示 */}
             <Box sx={{ mb: 2, display: "flex", alignItems: "center", gap: 2 }}>
-              {guildsLoading ? (
-                <Typography sx={{ py: 2 }}>サーバー一覧取得中…</Typography>
+              {guildsLoading || guildsPolling ? (
+                <Typography sx={{ py: 2 }}>
+                  {guildsPolling ? "サーバー一覧取得中…（Discord APIから取得しています）" : "サーバー一覧取得中…"}
+                </Typography>
               ) : guildsError ? (
                 <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: "#fdecea", border: 1, borderColor: "#f5c6cb" }}>
                   <Typography variant="body2" color="error">{guildsError}</Typography>
@@ -397,7 +427,7 @@ export default function DashboardPage() {
                 size="small"
                 sx={{ ml: 1, minWidth: 120 }}
                 onClick={() => fetchGuilds(true)}
-                disabled={guildsLoading}
+                disabled={guildsLoading || guildsPolling}
               >
                 ギルドキャッシュ再読み込み
               </Button>
