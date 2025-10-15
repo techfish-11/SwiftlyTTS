@@ -17,6 +17,9 @@ import os
 from dotenv import load_dotenv
 import yaml
 from lib.postgres import PostgresDB  # PostgresDBクラスをインポート
+import threading
+import uvicorn
+from lib.bot_http_server import app as bot_http_app, set_bot
 
 load_dotenv()
 
@@ -33,6 +36,17 @@ bot = commands.AutoShardedBot(
     shard_count=SHARD_COUNT,  # 環境変数から取得したシャード数を使用
     intents=intents
 )
+    
+# --- FastAPI HTTPサーバーをバックグラウンドで起動 ---
+
+def start_bot_http_server():
+    port = int(os.getenv("BOT_HTTP_PORT", 8000))
+    uvicorn.run(bot_http_app, host="0.0.0.0", port=port, log_level="info")
+
+
+# botインスタンスをFastAPI側に渡す
+set_bot(bot)
+threading.Thread(target=start_bot_http_server, daemon=True).start()
 
 # メトリクス用のカウンターを初期化
 bot.tts_counter = 0

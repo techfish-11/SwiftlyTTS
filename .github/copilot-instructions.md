@@ -1,52 +1,57 @@
-# Copilot Instructions for SwiftlyTTS
+# Copilot Instructions for SwiftlyTTS (updated)
 
-## 概要
-SwiftlyTTSは、Discord向けのテキスト読み上げBotです。Python（バックエンド）とNext.js（フロントエンド）で構成されています。VOICEVOXエンジンを利用し、PostgreSQLをバックエンドDBとして使用します。
+Below are concise, actionable notes to help an AI coding agent be productive in this repository.
 
-## アーキテクチャ
-- `bot.py`：Discord Botのエントリーポイント。コマンド処理・音声合成・DB連携の中心。
-- `cogs/`：Botの機能を拡張するモジュール群。`system/`（管理・監視）、`voice/`（音声・辞書）などに分割。
-- `lib/`：外部サービス連携やDB操作のラッパー（例：`VOICEVOXlib.py`, `postgres.py`）。
-- `web/`：Next.jsベースのWeb UI。`app/`配下にページやAPIルート、`lib/`にユーティリティ。
-- `config.yml`：Botの設定ファイル。
-- `.env`（未公開）：DBやAPIキー等の環境変数を管理。
+## Big picture
+- SwiftlyTTS is a Discord TTS bot (Python) + Next.js web UI. Core responsibilities:
+	- `bot.py`: entrypoint, loads `cogs/`, schedules background tasks, reads `config.yml`, and uses `lib/postgres.py` and `lib/VOICEVOXlib.py`.
+	- `cogs/`: command implementations grouped (e.g. `voice/`, `system/`). Extensions are loaded dynamically by `bot.py` using AutoShardedBot.
+	- `lib/VOICEVOXlib.py`: VOICEVOX HTTP client. Supports multiple VOICEVOX URLs via `VOICEVOX_URL` (comma-separated) and reloads `.env` at runtime.
+	- `lib/postgres.py`: asyncpg-based DB wrapper. `initialize()` creates required tables and performs a simple migration for `user_voice.speaker_id`.
+	- `web/`: Next.js (app router). Server-side API routes live under `web/app/api/`.
 
-## 開発・ビルド・実行
-- Python依存：`requirements.txt`（Windowsは`requirements.win.txt`）
-- Web依存：`web/package.json`（`npm install`）
-- Bot起動：`python bot.py`
-- Web起動：`cd web && npm run dev`
-- DB：PostgreSQL（`.env`で接続情報指定）
-- VOICEVOX：ローカルまたは指定URLでサーバー起動必須
+## Critical env vars & files (search these)
+- `.env` / `.env.example` (root) — required for local dev and runtime. Key names used:
+	- DISCORD_TOKEN, SHARD_COUNT, DEBUG
+	- DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
+	- VOICEVOX_URL (comma-separated list; default: http://localhost:50021)
+	- PROMETHEUS_URL (used by web API: `web/app/api/prometheus/range/route.ts`)
+	- NEXTAUTH_SECRET, DISCORD_CLIENT_ID / SECRET (web `web/lib/auth.ts`)
+- `config.yml` — bot command prefix (used by `bot.py`).
 
-## テスト・デバッグ
-- テストコードは現状未整備。主要機能は`cogs/`配下で分割管理。
-- Botのコマンドは`/join`, `/leave`, `/dictionary`等。詳細は`README.md`参照。
-- WebのAPIは`web/app/api/`配下で定義。
+## Run / build workflows (developer commands)
+- Python (bot):
+	- Install: `pip install -r requirements.txt` (Windows: `requirements.win.txt`).
+	- Run: `python bot.py` (ensure `.env` present and VOICEVOX + Postgres accessible).
+	- Note: On Windows the code sets WindowsSelectorEventLoopPolicy in `bot.py`.
+- Web (Next.js):
+	- Install: `cd web && npm install`
+	- Dev: `cd web && npm run dev`
+	- Build: `cd web && npm run build` (CI uses this; a successful build was run in workspace history).
 
-## プロジェクト固有の慣習
-- Bot機能は`cogs/`で細分化し、責務ごとにディレクトリ分割。
-- DBアクセスは`lib/postgres.py`経由で統一。
-- 音声合成は`lib/VOICEVOXlib.py`で抽象化。
-- Webのユーティリティは`web/lib/utils.ts`に集約。
-- 設定値は`config.yml`と`.env`で分離管理。
+## Integration & runtime patterns to preserve
+- VOICEVOX URL rotation: `VOICEVOXlib` reads `VOICEVOX_URL` from env and tries each URL; agent changes should preserve the retry/round-robin semantics and the fact it reloads `.env` dynamically.
+- DB migrations: `PostgresDB.initialize()` is idempotent and creates tables on startup. Small column migrations are handled there — prefer in-code, non-destructive migrations rather than assuming external migration tooling.
+- Cog loading: `bot.py` walks `./cogs` and constructs module strings (replace os.sep with '.') — keep that string building logic if moving files.
 
-## 代表的なファイル例
-- `cogs/voice/dictionary.py`：辞書コマンドの実装例
-- `web/app/api/servers/route.ts`：APIルートの実装例
-- `lib/VOICEVOXlib.py`：VOICEVOX連携の実装例
+## Observatory & metrics
+- `lib/VOICEVOXlib.py` exposes a Prometheus Gauge named `voice_generation_seconds_per_minute`.
+- Web frontend calls Prometheus via `PROMETHEUS_URL`; ensure URL is valid (route will return a helpful JSON error if not).
 
-## 外部連携・依存
-- Discord API（Bot）
-- VOICEVOXエンジン（音声合成）
-- PostgreSQL（DB）
-- Next.js（Web UI）
+## Project-specific conventions
+- Keep bot responsibilities inside `cogs/` modules (each file is a discord.py extension loaded by `bot.load_extension`).
+- Use `lib/postgres.py` for all DB access (it provides helper methods like `upsert_dictionary`, `insert_guild_count`, etc.).
+- `VOICEVOXlib` returns either saved tmp file paths (`synthesize`) or (base_url, bytes) (`synthesize_bytes`) — pay attention to both return shapes.
 
-## 注意点
-- Windows環境では`requirements.win.txt`を使用
-- `.env`は必須（DB/Discord/VOICEVOX設定）
-- VOICEVOXサーバーの起動・URL指定が必要
+## Files to inspect when changing behavior
+- `bot.py` (startup, event loop, cog loading, task scheduling)
+- `lib/VOICEVOXlib.py` (VOICEVOX interaction, tmp file handling, metrics)
+- `lib/postgres.py` (schema creation, helper DB methods)
+- `README.md` and `.env.example` (runtime config examples)
+- `pterodactyl-egg.json` (env var definitions for hosted deployments)
 
----
+## Safety / quick checks before edits
+- Don't assume database schema migrations exist — inspect `PostgresDB.initialize()`.
+- Preserve `.env` names and defaults when introducing config changes (the web and bot read envs independently).
 
-このドキュメントはAIエージェント向けの開発ガイドです。プロジェクト構造や慣習に従い、既存の分割・抽象化パターンを尊重してください。
+If any section is unclear or you want me to expand examples (e.g., show the cog-loading code snippet or VOICEVOX retry flow), tell me which area to expand and I'll iterate.
