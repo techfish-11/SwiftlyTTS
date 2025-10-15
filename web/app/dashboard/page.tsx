@@ -352,7 +352,6 @@ export default function DashboardPage() {
           >
             <Box sx={{ px: 2, py: 1.5, minWidth: 200 }}>
               <Typography variant="body2" fontWeight={600}>{user?.name ?? "ユーザー"}</Typography>
-              <Typography variant="caption" color="text.secondary">{user?.email}</Typography>
             </Box>
             <Divider />
             <MenuItem onClick={handleSignOut}>サインアウト</MenuItem>
@@ -380,7 +379,7 @@ export default function DashboardPage() {
               </Avatar>
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 500 }}>
-                  ようこそ、{user?.name ?? user?.email ?? "ゲスト"} さん
+                  ようこそ、{user?.name ?? "ゲスト"} さん
                 </Typography>
                 <Chip label="ログイン済み" size="small" sx={{ mt: 0.5, bgcolor: "#e8f5e9", color: "#2e7d32", fontWeight: 500 }} />
               </Box>
