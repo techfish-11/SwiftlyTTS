@@ -130,7 +130,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    fetch("/api/servers")
+    fetch("/api/servercount")
       .then((res) => res.json())
       .then((data) => {
         if (typeof data.guild_count === "number") {

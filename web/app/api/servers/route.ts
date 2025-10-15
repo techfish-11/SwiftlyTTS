@@ -1,4 +1,3 @@
-
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -12,13 +11,8 @@ export async function GET(request: Request) {
   }
 
   // クエリパラメータでforce=1なら強制再取得
-  // (urlは不要なので削除)
-  let force = false;
-  try {
-    // Next.js API Routeではreq.urlが使えないので、headers.refererからクエリを取得
-    const referer = (typeof window === "undefined" ? undefined : window.location.href) || "";
-    force = referer.includes("force=1");
-  } catch {}
+  const url = new URL(request.url);
+  const force = url.searchParams.get("force") === "1";
 
   // Cookieからキャッシュ取得
 
@@ -50,19 +44,24 @@ export async function GET(request: Request) {
   // Discord API: /users/@me/guilds
   let res;
   let lastError = null;
-  for (let i = 0; i < 2; i++) { // 2回までリトライ
+  for (let i = 0; i < 1; i++) { // 1回までリトライ（高速化）
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2秒タイムアウト
     try {
       res = await fetch("https://discord.com/api/v10/users/@me/guilds", {
         headers: {
           Authorization: `Bearer ${session.accessToken}`,
         },
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (res.ok) break;
       lastError = await res.text();
     } catch (e) {
+      clearTimeout(timeoutId);
       lastError = (e instanceof Error ? e.message : String(e));
     }
-    await new Promise(r => setTimeout(r, 500)); // 0.5秒待機
+    await new Promise(r => setTimeout(r, 500)); // 0.5秒待機（高速化）
   }
 
   if (!res || !res.ok) {
