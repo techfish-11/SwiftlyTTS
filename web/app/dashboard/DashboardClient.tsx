@@ -33,6 +33,9 @@ export default function DashboardClient() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
+  // サーバー数表示用state
+  const [serverCount, setServerCount] = useState<string>("...");
+
   // ユーザー辞書管理用state
   // ギルド辞書管理用state
   const [guilds, setGuilds] = useState<Guild[]>([]);
@@ -149,6 +152,17 @@ export default function DashboardClient() {
     if (status === "authenticated") {
       fetchUserDictionary();
       fetchGuilds();
+      // サーバー数取得
+      fetch("/api/servercount", { credentials: "include" })
+        .then((res) => res.json())
+        .then((data) => {
+          if (typeof data.count === "number") {
+            setServerCount(`${data.count}`);
+          }
+        })
+        .catch(() => {
+          setServerCount("N/A");
+        });
     }
   }, [status, fetchGuilds]);
 
@@ -336,8 +350,24 @@ export default function DashboardClient() {
       <AppBar position="static" elevation={0} sx={{ bgcolor: "white", borderBottom: 1, borderColor: "divider" }}>
         <Toolbar>
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, color: "text.primary", fontWeight: 500 }}>
-            Swiftly TTS
+            Swiftly読み上げbot ダッシュボード
           </Typography>
+          {/* サーバー数表示 */}
+          <Chip
+            label={`${serverCount} サーバー`}
+            size="small"
+            sx={{
+              mr: 2,
+              bgcolor: "#e8f5e9",
+              color: "#2e7d32",
+              fontWeight: 500,
+              fontSize: "0.813rem",
+              height: 28,
+              "& .MuiChip-label": {
+                px: 1.5,
+              },
+            }}
+          />
           <IconButton onClick={handleMenu} sx={{ p: 0 }}>
             <Avatar src={user?.image ?? undefined} alt={user?.name ?? "user"} sx={{ width: 32, height: 32 }}>
               {user?.name ? user.name.charAt(0).toUpperCase() : "U"}
