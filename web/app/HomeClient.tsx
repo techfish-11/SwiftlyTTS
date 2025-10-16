@@ -133,8 +133,8 @@ export default function Home() {
     fetch("/api/servercount")
       .then((res) => res.json())
       .then((data) => {
-        if (typeof data.guild_count === "number") {
-          setServerCount(`${data.guild_count}`);
+        if (typeof data.count === "number") {
+          setServerCount(`${data.count}`);
         }
       })
       .catch(() => {
