@@ -44,6 +44,37 @@ async def get_user_dictionary(user_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/servers")
+async def get_server_count():
+    """Return the number of guilds the bot is connected to.
+
+    Response shape:
+      { "count": 123 }
+
+    If the global bot instance is not set, return a 503 with ok:false.
+    """
+    try:
+        if _bot is None:
+            raise HTTPException(status_code=503, detail="bot not ready")
+
+        # AutoShardedBot and Bot both expose guilds; use len(list(_bot.guilds)) to be safe
+        try:
+            guilds = list(_bot.guilds)
+            count = len(guilds)
+        except Exception:
+            # Fallback: try attribute `guild_count` if available
+            count = getattr(_bot, "guild_count", None)
+            if count is None:
+                raise
+
+        return JSONResponse({"count": int(count)})
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Return 500 on unexpected errors
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/user-dictionary/notify")
 async def notify_user_dictionary(request: Request):
     print("[Notify] Received user dictionary change notification")
