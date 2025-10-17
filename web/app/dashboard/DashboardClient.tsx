@@ -396,7 +396,7 @@ export default function DashboardClient() {
             ダッシュボード
           </Typography>
           <Typography variant="body2" color="text.secondary">
-            ユーザー辞書の管理やBOT設定を行います
+            辞書の管理やBOT設定を行います
           </Typography>
         </Box>
 
@@ -600,7 +600,8 @@ export default function DashboardClient() {
               ユーザー辞書
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              読み上げをカスタマイズするための辞書を管理します
+              ユーザー辞書とは、すべてのサーバーで共通して使用される辞書です。
+              ユーザー単位に登録されるため、参加しているすべてのサーバーで同じ辞書が利用されます。
             </Typography>
 
             {dictError && (

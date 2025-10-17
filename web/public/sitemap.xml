@@ -10,4 +10,14 @@
         <priority>1.0</priority>
         <changefreq>monthly</changefreq>
     </url>
+    <url>
+        <loc>https://swiftlybot.com/auth/signin</loc>
+        <priority>1.0</priority>
+        <changefreq>monthly</changefreq>
+    </url>
+    <url>
+        <loc>https://swiftlybot.com/dashboard</loc>
+        <priority>1.0</priority>
+        <changefreq>monthly</changefreq>
+    </url>
 </urlset>
