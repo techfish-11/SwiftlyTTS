@@ -653,13 +653,20 @@ class VoiceReadCog(commands.Cog):
         # 添付画像の枚数をカウント
         image_count = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
         # 読み上げテキストを決定
+        tts_text = message.content  # メッセージ本文（str型）
         if image_count > 0:
-            if image_count == 1:
-                tts_text = "1枚の画像"
+            # メッセージ本文がある場合は本文を優先し、最後に画像枚数を追加
+            if tts_text.strip():
+                if image_count == 1:
+                    tts_text += "、1枚の画像"
+                else:
+                    tts_text += f"、{image_count}枚の画像"
             else:
-                tts_text = f"{image_count}枚の画像"
-        else:
-            tts_text = message.content  # メッセージ本文（str型）
+                # メッセージ本文が空の場合は画像枚数のみ
+                if image_count == 1:
+                    tts_text = "1枚の画像"
+                else:
+                    tts_text = f"{image_count}枚の画像"
 
         # ユーザーのスピーカーIDを取得
         speaker_id = await self.get_user_speaker_id(message.author.id)
