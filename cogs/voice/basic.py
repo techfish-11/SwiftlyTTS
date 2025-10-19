@@ -249,7 +249,7 @@ class VoiceReadCog(commands.Cog):
             now = datetime.now(jst).time()
             extra_msg = ""
             if (dtime(22,0) <= now or now < dtime(3,0)):
-                extra_msg = "\n高負荷時間帯につき一時的に声がずんだもんになります"
+                extra_msg = "\n高負荷時間帯（22:00~3:00）につき一時的に声がずんだもんになります"
             embed = discord.Embed(
                 title="接続完了",
                 description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5{extra_msg}",
