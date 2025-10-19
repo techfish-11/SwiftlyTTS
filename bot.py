@@ -36,6 +36,7 @@ bot = commands.AutoShardedBot(
     shard_count=SHARD_COUNT,  # 環境変数から取得したシャード数を使用
     intents=intents
 )
+bot.config = config  # 追加: 設定をbotインスタンスに保持
     
 # --- FastAPI HTTPサーバーをバックグラウンドで起動 ---
 
