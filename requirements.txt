@@ -1,4 +1,5 @@
 discord.py
+pytz
 python-dotenv
 asyncpg
 PyYAML

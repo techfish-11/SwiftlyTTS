@@ -242,9 +242,32 @@ class VoiceReadCog(commands.Cog):
 
             self.bot.loop.create_task(play_connection_message())
 
+            # 高負荷時間帯判定・通知文生成
+            from datetime import datetime, time as dtime
+            import pytz
+            jst = pytz.timezone("Asia/Tokyo")
+            now = datetime.now(jst).time()
+            extra_msg = ""
+            high_load_time = getattr(self.bot, "config", {}).get("high_load_time")
+            in_high_load = False
+            if high_load_time:
+                try:
+                    start_str, end_str = high_load_time.split("-")
+                    start_h, start_m = map(int, start_str.split(":"))
+                    end_h, end_m = map(int, end_str.split(":"))
+                    start = dtime(start_h, start_m)
+                    end = dtime(end_h, end_m)
+                    if start <= end:
+                        in_high_load = start <= now < end
+                    else:
+                        in_high_load = now >= start or now < end
+                    if in_high_load:
+                        extra_msg = f"\n高負荷時間帯（{high_load_time}）につき一時的に声がずんだもんになります"
+                except Exception:
+                    pass
             embed = discord.Embed(
                 title="接続完了",
-                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
+                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5{extra_msg}",
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Hosted by sakana11.org")
@@ -565,7 +588,29 @@ class VoiceReadCog(commands.Cog):
         await interaction.response.send_message(f"サーバー全体の読み上げスピードを{speed}に設定しました。", ephemeral=False)
 
     async def get_user_speaker_id(self, user_id: int) -> int:
-        """ユーザーのスピーカーIDを取得"""
+        """ユーザーのスピーカーIDを取得（高負荷時間帯はconfigで制御）"""
+        from datetime import datetime, time as dtime
+        import pytz
+        jst = pytz.timezone("Asia/Tokyo")
+        now = datetime.now(jst).time()
+        # 設定取得
+        high_load_time = getattr(self.bot, "config", {}).get("high_load_time")
+        if high_load_time:
+            try:
+                start_str, end_str = high_load_time.split("-")
+                start_h, start_m = map(int, start_str.split(":"))
+                end_h, end_m = map(int, end_str.split(":"))
+                start = dtime(start_h, start_m)
+                end = dtime(end_h, end_m)
+                # 例: 22:00-03:00 の場合
+                if start <= end:
+                    in_range = start <= now < end
+                else:
+                    in_range = now >= start or now < end
+                if in_range:
+                    return 3  # ずんだもんID
+            except Exception:
+                pass  # 設定不正時は通常通り
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
         return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 

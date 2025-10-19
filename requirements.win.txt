@@ -10,3 +10,4 @@ prometheus_client
 sentry-sdk
 fastapi
 uvicorn
+pytz
