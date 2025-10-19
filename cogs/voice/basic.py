@@ -242,9 +242,17 @@ class VoiceReadCog(commands.Cog):
 
             self.bot.loop.create_task(play_connection_message())
 
+            # 高負荷時間帯判定
+            from datetime import datetime, time as dtime
+            import pytz
+            jst = pytz.timezone("Asia/Tokyo")
+            now = datetime.now(jst).time()
+            extra_msg = ""
+            if (dtime(22,0) <= now or now < dtime(3,0)):
+                extra_msg = "\n高負荷時間帯につき一時的に声がずんだもんになります"
             embed = discord.Embed(
                 title="接続完了",
-                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5",
+                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5{extra_msg}",
                 color=discord.Color.blue()
             )
             embed.set_footer(text="Hosted by sakana11.org")
@@ -565,7 +573,14 @@ class VoiceReadCog(commands.Cog):
         await interaction.response.send_message(f"サーバー全体の読み上げスピードを{speed}に設定しました。", ephemeral=False)
 
     async def get_user_speaker_id(self, user_id: int) -> int:
-        """ユーザーのスピーカーIDを取得"""
+        """ユーザーのスピーカーIDを取得（高負荷時間帯は自動でずんだもん）"""
+        from datetime import datetime, time as dtime
+        import pytz
+        jst = pytz.timezone("Asia/Tokyo")
+        now = datetime.now(jst).time()
+        # 22:00〜23:59または0:00〜2:59はずんだもん
+        if (dtime(22,0) <= now or now < dtime(3,0)):
+            return 3  # ずんだもんID
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
         return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 
