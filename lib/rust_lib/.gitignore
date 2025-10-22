@@ -7,3 +7,5 @@ target/
 
 # If you're using clippy:
 clippy.toml
+
+Cargo.lock
