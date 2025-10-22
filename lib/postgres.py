@@ -13,6 +13,9 @@ DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_SSL = os.getenv("DB_SSL", "false").lower() == "true"
 print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME}")
 
+if not DB_SSL:
+    DB_SSL = None
+
 class PostgresDB:
     """PostgreSQL database management class using asyncpg"""
 
