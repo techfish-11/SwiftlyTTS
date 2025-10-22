@@ -35,10 +35,13 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Rust toolchain（maturinビルド用）をインストール
+# Rust toolchain and maturin installation
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
     && . $HOME/.cargo/env \
     && rustup default stable
+
+# maturinをPATHに追加
+ENV PATH="$HOME/.cargo/bin:${PATH}"
 
 # maturinインストール
 RUN pip install maturin
@@ -54,8 +57,8 @@ RUN pip install --upgrade pip setuptools wheel \
 # アプリケーションコードをコピー
 COPY . /app
 
-# Rustバインディングをビルド
-RUN . $HOME/.cargo/env && cd lib/rust_lib && maturin develop
+# Rustバインディングをリリースビルド
+RUN cd lib/rust_lib && maturin develop --release
 
 # 実行ユーザーを作成し、所有権を変更
 RUN groupadd -g ${GID} ${USER} || true \
