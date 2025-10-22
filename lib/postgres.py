@@ -10,7 +10,12 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME}")
+DB_SSL_ENV = os.getenv("DB_SSL", "false").lower()
+if DB_SSL_ENV == "true":
+    DB_SSL = True
+else:
+    DB_SSL = False
+print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME} (SSL: {DB_SSL})")
 
 class PostgresDB:
     """PostgreSQL database management class using asyncpg"""
@@ -26,6 +31,7 @@ class PostgresDB:
             database=DB_NAME,
             user=DB_USER,
             password=DB_PASSWORD,
+            ssl=DB_SSL,
             min_size=1,
             max_size=10
         )

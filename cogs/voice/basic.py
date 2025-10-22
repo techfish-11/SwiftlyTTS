@@ -7,6 +7,7 @@ import subprocess
 from lib.VOICEVOXlib import VOICEVOXLib
 from discord import app_commands
 from lib.postgres import PostgresDB  # PostgresDBをインポート
+from lib.rust_lib_client import RustQueueClient
 import uuid
 from dotenv import load_dotenv  # dotenvをインポート
 import traceback
@@ -56,8 +57,8 @@ class VoiceReadCog(commands.Cog):
         self.voicelib = VOICEVOXLib()
         self.speaker_id = 1
         self.tts_channels = {}      # {guild.id: channel.id}
-        self.message_queues = {}    # {guild.id: asyncio.Queue}
         self.queue_tasks = {}       # {guild.id: Task}
+        self.rust_queue = RustQueueClient()
         self.db = PostgresDB()  # データベースインスタンスを初期化
         self.cleanup_task = None  # 定期的なクリーンアップタスク
         # 新規: ギルド単位の接続ロック
@@ -186,7 +187,6 @@ class VoiceReadCog(commands.Cog):
                     self.queue_tasks[guild_id].cancel()
                     del self.queue_tasks[guild_id]
                 self.tts_channels.pop(guild_id, None)
-                self.message_queues.pop(guild_id, None)
                 # DBから既存のVC接続状態を削除
                 await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild_id)
             
@@ -208,7 +208,6 @@ class VoiceReadCog(commands.Cog):
 
             # 接続成功後の処理
             self.tts_channels[guild_id] = interaction.channel.id
-            self.message_queues[guild_id] = asyncio.Queue()
             self.queue_tasks[guild_id] = self.bot.loop.create_task(self.process_queue(guild_id))
             
             # データベースにVC接続状態を保存（DEBUGモード時はスキップ）
@@ -294,7 +293,6 @@ class VoiceReadCog(commands.Cog):
                 self.queue_tasks[interaction.guild.id].cancel()
                 del self.queue_tasks[interaction.guild.id]
             self.tts_channels.pop(interaction.guild.id, None)
-            self.message_queues.pop(interaction.guild.id, None)
             # データベースからVC接続状態を削除
             await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", interaction.guild.id)
             embed = discord.Embed(
@@ -347,7 +345,6 @@ class VoiceReadCog(commands.Cog):
                 if vc:
                     # 接続後の初期化
                     self.tts_channels[guild.id] = tts_channel_id
-                    self.message_queues[guild.id] = asyncio.Queue()
                     self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                     # DBにVC接続状態を記録
                     await self.db.execute(
@@ -615,14 +612,15 @@ class VoiceReadCog(commands.Cog):
         return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 
     async def process_queue(self, guild_id):
-        """サーバーごとの読み上げキューを処理"""
+        """サーバーごとの読み上げキューをRustで処理"""
         guild = self.bot.get_guild(guild_id)
-        queue = self.message_queues.get(guild_id)
-        if not queue:
-            return  # キューが存在しない場合は終了
         while True:
             try:
-                text, speaker_id = await queue.get()  # キューからテキストとスピーカーIDを取得
+                item = self.rust_queue.get_next(guild_id)
+                if item is None:
+                    await asyncio.sleep(0.1)
+                    continue
+                text, speaker_id = item
                 voice_client = guild.voice_client
                 # ボイスチャンネル未接続の場合はスキップ
                 if not voice_client or not voice_client.is_connected():
@@ -677,13 +675,7 @@ class VoiceReadCog(commands.Cog):
             return  # 違うチャンネルの場合は無視
 
         if message.content.strip() == "s":
-            queue = self.message_queues.get(message.guild.id)
-            if queue:
-                while not queue.empty():
-                    try:
-                        queue.get_nowait()
-                    except Exception:
-                        break
+            self.rust_queue.clear(message.guild.id)
             voice_client = message.guild.voice_client
             if voice_client and voice_client.is_playing():
                 voice_client.stop()
@@ -693,8 +685,6 @@ class VoiceReadCog(commands.Cog):
                 pass
             return
 
-        # キューが存在しない場合は初期化
-        queue = self.message_queues.setdefault(message.guild.id, asyncio.Queue())
         # 添付画像の枚数をカウント
         image_count = sum(1 for a in message.attachments if a.content_type and a.content_type.startswith("image/"))
         # 読み上げテキストを決定
@@ -715,7 +705,7 @@ class VoiceReadCog(commands.Cog):
 
         # ユーザーのスピーカーIDを取得
         speaker_id = await self.get_user_speaker_id(message.author.id)
-        await queue.put((tts_text, speaker_id))  # テキストとスピーカーIDをキューに追加
+        self.rust_queue.add(message.guild.id, tts_text, speaker_id)  # Rustキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -748,7 +738,6 @@ class VoiceReadCog(commands.Cog):
                                     self.logger.info(f"[Autojoin] Connected to VC for guild={guild.id}, channel={after.channel.id}")
                                     # 初期化
                                     self.tts_channels[guild.id] = cfg[1]
-                                    self.message_queues[guild.id] = self.message_queues.get(guild.id, asyncio.Queue())
                                     if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                                         self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                                     # DBにVC接続状態を保存
@@ -785,7 +774,6 @@ class VoiceReadCog(commands.Cog):
                     self.queue_tasks[guild.id].cancel()
                     del self.queue_tasks[guild.id]
                 self.tts_channels.pop(guild.id, None)
-                self.message_queues.pop(guild.id, None)
                 # データベースからVC接続状態を削除
                 await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                 return
@@ -800,7 +788,6 @@ class VoiceReadCog(commands.Cog):
                         self.queue_tasks[guild.id].cancel()
                         del self.queue_tasks[guild.id]
                     self.tts_channels.pop(guild.id, None)
-                    self.message_queues.pop(guild.id, None)
                     # データベースからVC接続状態を削除
                     await self.db.execute("DELETE FROM vc_state WHERE guild_id = $1", guild.id)
                     return
@@ -821,7 +808,6 @@ class VoiceReadCog(commands.Cog):
                             if voice_client is not None:
                                 await guild.change_voice_state(channel=vc_channel, self_mute=False, self_deaf=True)
                                 self.tts_channels[guild.id] = tts_channel.id
-                                self.message_queues[guild.id] = asyncio.Queue()
                                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
                         except Exception as e:
                             self.logger.error(f"Failed to reconnect to VC in guild {guild.id}: {e}")
@@ -839,9 +825,8 @@ class VoiceReadCog(commands.Cog):
             if not voice_client or not voice_client.is_connected():
                 return
 
-            # メッセージをキューに追加（システム音声はスピーカーIDを1に固定）
-            queue = self.message_queues.setdefault(guild.id, asyncio.Queue())
-            await queue.put((msg, self.speaker_id))  # システム音声用: (text, speaker_id)
+            # メッセージをRustキューに追加（システム音声はスピーカーIDを1に固定）
+            self.rust_queue.add(guild.id, msg, self.speaker_id)
             # ここでプロセスタスクが存在しなければ作成する
             if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))

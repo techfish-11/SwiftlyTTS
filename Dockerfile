@@ -11,6 +11,9 @@
 
 FROM python:3.11-slim
 
+# 明示的にHOMEを定義
+ENV HOME=/root
+
 # 非バッファリング（ログをすぐ出力）と.pycファイル生成抑制
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -35,6 +38,17 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Rustツールチェーンのインストール
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
+    && . /root/.cargo/env \
+    && rustup default stable
+
+# maturinをPATHに追加
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# maturinインストール
+RUN pip install maturin
+
 # 作業ディレクトリ
 WORKDIR /app
 
@@ -45,6 +59,9 @@ RUN pip install --upgrade pip setuptools wheel \
 
 # アプリケーションコードをコピー
 COPY . /app
+
+# Rustバインディングをリリースビルド
+RUN cd lib/rust_lib && maturin build --release && pip install target/wheels/*.whl --force-reinstall
 
 # 実行ユーザーを作成し、所有権を変更
 RUN groupadd -g ${GID} ${USER} || true \
