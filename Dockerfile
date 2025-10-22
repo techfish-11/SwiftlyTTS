@@ -61,7 +61,7 @@ RUN pip install --upgrade pip setuptools wheel \
 COPY . /app
 
 # Rustバインディングをリリースビルド
-RUN cd lib/rust_lib && maturin develop --release
+RUN cd lib/rust_lib && maturin build --release && pip install target/wheels/*.whl --force-reinstall
 
 # 実行ユーザーを作成し、所有権を変更
 RUN groupadd -g ${GID} ${USER} || true \
