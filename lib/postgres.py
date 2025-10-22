@@ -10,6 +10,7 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
+DB_SSL = os.getenv("DB_SSL", "false").lower() == "true"
 print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME}")
 
 class PostgresDB:
@@ -26,6 +27,7 @@ class PostgresDB:
             database=DB_NAME,
             user=DB_USER,
             password=DB_PASSWORD,
+            ssl=DB_SSL,
             min_size=1,
             max_size=10
         )
