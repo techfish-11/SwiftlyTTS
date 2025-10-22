@@ -11,6 +11,9 @@
 
 FROM python:3.11-slim
 
+# 明示的にHOMEを定義
+ENV HOME=/root
+
 # 非バッファリング（ログをすぐ出力）と.pycファイル生成抑制
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
@@ -35,13 +38,13 @@ RUN apt-get update \
         curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Rust toolchain and maturin installation
+# Rustツールチェーンのインストール
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
-    && . $HOME/.cargo/env \
+    && . /root/.cargo/env \
     && rustup default stable
 
 # maturinをPATHに追加
-ENV PATH="$HOME/.cargo/bin:${PATH}"
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 # maturinインストール
 RUN pip install maturin
