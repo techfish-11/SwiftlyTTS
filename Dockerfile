@@ -70,8 +70,5 @@ RUN groupadd -g ${GID} ${USER} || true \
 
 USER ${USER}
 
-# 証明書パーミッション修正
-RUN [ -f /root/.postgresql/postgresql.key ] && chmod 600 /root/.postgresql/postgresql.key || true
-
 # デフォルトコマンド
 CMD ["python", "bot.py"]
