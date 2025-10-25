@@ -816,9 +816,17 @@ class VoiceReadCog(commands.Cog):
 
             # 参加・退出時にTTSを再生
             if before.channel is None and after.channel is not None:
-                msg = f"{member.display_name}が参加しました。"
+                # 参加したVCがbotのいるVCか判定
+                if voice_client and after.channel == voice_client.channel:
+                    msg = f"{member.display_name}が参加しました。"
+                else:
+                    return
             elif before.channel is not None and after.channel is None:
-                msg = f"{member.display_name}が退出しました。"
+                # 退出したVCがbotのいるVCか判定
+                if voice_client and before.channel == voice_client.channel:
+                    msg = f"{member.display_name}が退出しました。"
+                else:
+                    return
             else:
                 return
 

@@ -17,14 +17,15 @@ fn add_to_queue(guild_id: u64, text: String, speaker_id: u64) {
 }
 
 #[pyfunction]
-fn get_next(py: Python, guild_id: u64) -> Option<PyObject> {
+fn get_next(py: Python, guild_id: u64) -> PyResult<PyObject> {
     let mut queues = QUEUES.lock().unwrap();
     if let Some(queue) = queues.get_mut(&guild_id) {
         if let Some((text, speaker_id)) = queue.pop_front() {
-            return Some(PyTuple::new(py, &[text.into_py(py), speaker_id.into_py(py)]).into());
+            let tuple = PyTuple::new(py, &[text.into_py(py), speaker_id.into_py(py)])?;
+            return Ok(tuple.into_py(py));
         }
     }
-    None
+    Ok(py.None())
 }
 
 #[pyfunction]
@@ -40,7 +41,7 @@ fn queue_length(guild_id: u64) -> usize {
 }
 
 #[pymodule]
-fn rust_queue(_py: Python, m: &PyModule) -> PyResult<()> {
+fn rust_queue(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(add_to_queue, m)?)?;
     m.add_function(wrap_pyfunction!(get_next, m)?)?;
     m.add_function(wrap_pyfunction!(clear_queue, m)?)?;
