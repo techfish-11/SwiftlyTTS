@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands, tasks
 from prometheus_client import Gauge, start_http_server
+from collections import defaultdict
 
 class PrometheusCog(commands.Cog):
     def __init__(self, bot):
@@ -10,11 +11,18 @@ class PrometheusCog(commands.Cog):
         self.latency_metric = Gauge('bot_latency_ms', 'botのレイテンシ（ms）') 
         self.tts_count_per_minute = Gauge('bot_tts_count_per_minute', '1分間に読み上げた回数')
         self.error_count_per_minute = Gauge('bot_error_count_per_minute', '1分間に起きたエラー数')
+        self.command_counters = defaultdict(int)
+        self.command_gauges = {}
         self.update_metrics.start()
         start_http_server(47724)
 
     def cog_unload(self):
         self.update_metrics.cancel()
+
+    @commands.Cog.listener()
+    async def on_application_command(self, ctx):
+        cmd_name = ctx.command.name if hasattr(ctx, "command") else "unknown"
+        self.command_counters[cmd_name] += 1
 
     @tasks.loop(minutes=1)
     async def update_metrics(self):
@@ -26,6 +34,15 @@ class PrometheusCog(commands.Cog):
         self.latency_metric.set(latency_ms)
         self.tts_count_per_minute.set(self.bot.tts_counter)
         self.error_count_per_minute.set(self.bot.error_counter)
+        # 各コマンドの1分間使用回数をPrometheus Gaugeにセット
+        for cmd_name, count in self.command_counters.items():
+            if cmd_name not in self.command_gauges:
+                self.command_gauges[cmd_name] = Gauge(
+                    f'bot_command_{cmd_name}_count_per_minute',
+                    f'1分間に使用されたコマンド {cmd_name} の回数'
+                )
+            self.command_gauges[cmd_name].set(count)
+        self.command_counters.clear()
         # カウンターをリセット
         self.bot.tts_counter = 0
         self.bot.error_counter = 0
