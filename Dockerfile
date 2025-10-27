@@ -55,7 +55,7 @@ WORKDIR /app
 # 依存関係を先にコピーしてインストール（キャッシュを活用）
 COPY requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir -r /app/requirements.txt
+    && pip install --upgrade --no-cache-dir -r /app/requirements.txt
 
 # アプリケーションコードをコピー
 COPY . /app
