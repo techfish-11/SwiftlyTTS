@@ -8,6 +8,10 @@ import shutil
 from prometheus_client import Gauge
 import random
 import logging  # 追加: エラーログ用
+try:
+    import sentry_sdk
+except ImportError:
+    sentry_sdk = None
 
 # Load environment variables
 load_dotenv()
@@ -24,6 +28,7 @@ class VOICEVOXLib:
         self._default_url = "http://localhost:50021"
         # 初期化時は一度だけロード
         self.base_urls = self._load_base_urls()
+        self.backup_urls = self._load_backup_urls()
         # プロジェクトルートの tmp ディレクトリを確保
         # lib ディレクトリの親をプロジェクトルートとみなし、その直下に tmp を作成する
         try:
@@ -54,6 +59,11 @@ class VOICEVOXLib:
             else:
                 return [self._base_url_arg]
 
+    def _load_backup_urls(self):
+        load_dotenv(override=True)
+        backup_env_urls = os.getenv("VOICEVOX_BACKUP_URL", "")
+        return [u.strip() for u in backup_env_urls.split(",") if u.strip()]
+
     def _choose_base_url(self):
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
@@ -79,10 +89,12 @@ class VOICEVOXLib:
         """
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
+        self.backup_urls = self._load_backup_urls()
+        last_error = None
+        # まず通常サーバーで試行
         for base_url in self.base_urls:
             if os.getenv("DEBUG") == "1":
                 print(f"Using VOICEVOX URL: {base_url}")
-            last_error = None
             for attempt in range(3):
                 try:
                     async with aiohttp.ClientSession() as session:
@@ -166,8 +178,73 @@ class VOICEVOXLib:
                     continue
                 except Exception as e:
                     logging.error(f"VOICEVOX synthesis unexpected error for URL {base_url}: {e}")
+                    last_error = e
                     break
-            # 3回とも失敗した場合のみ次のURLへ
+        # 通常サーバー全て失敗→バックアップサーバーで再試行
+        if self.backup_urls:
+            for backup_url in self.backup_urls:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        start_time = time.perf_counter()
+                        # Step 1: Generate audio query
+                        async with session.post(
+                            f"{backup_url}/audio_query",
+                            params={"text": text, "speaker": speaker_id}
+                        ) as query_response:
+                            query_response.raise_for_status()
+                            audio_query = await query_response.json()
+                            if "speedScale" in audio_query:
+                                audio_query["speedScale"] = speed
+
+                        # Step 2: Synthesize audio
+                        async with session.post(
+                            f"{backup_url}/synthesis",
+                            params={"speaker": speaker_id},
+                            json=audio_query
+                        ) as synthesis_response:
+                            synthesis_response.raise_for_status()
+                            wav_bytes = await synthesis_response.read()
+
+                        elapsed = time.perf_counter() - start_time
+
+                        # Step 3: Save WAV file and compute duration
+                        with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                            n_frames = wav_file.getnframes()
+                            framerate = wav_file.getframerate()
+                            duration_sec = n_frames / framerate if framerate else 0.0
+
+                            # Update Prometheus metric: seconds of processing per 1 minute of audio
+                            if duration_sec > 0:
+                                seconds_per_minute = elapsed * 60.0 / duration_sec
+                            else:
+                                seconds_per_minute = 0.0
+                            try:
+                                VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
+                            except Exception:
+                                pass
+
+                            filename = os.path.basename(output_path)
+                            if self.tmp_dir:
+                                tmp_output_path = os.path.join(self.tmp_dir, filename)
+                            else:
+                                tmp_output_path = os.path.abspath(output_path)
+
+                            # tmp に保存
+                            with wave.open(tmp_output_path, "wb") as output_file:
+                                output_file.setparams(wav_file.getparams())
+                                output_file.writeframes(wav_file.readframes(n_frames))
+
+                            # SentryにINFOログ送信
+                            if sentry_sdk:
+                                sentry_sdk.capture_message(
+                                    f"VOICEVOX backup server used: {backup_url} for text: {text[:50]}...",
+                                    level="info"
+                                )
+                            return tmp_output_path
+                except Exception as e:
+                    logging.error(f"VOICEVOX backup synthesis failed for URL {backup_url}: {e}")
+                    last_error = e
+                    continue
         raise RuntimeError(f"All VOICEVOX URLs failed for synthesis: {text[:50]}... Last error: {last_error}")
 
     async def synthesize_bytes(self, text, speaker_id) -> tuple[str, bytes]:
@@ -183,10 +260,11 @@ class VOICEVOXLib:
         """
         # .envを毎回再読込してURLリストを更新
         self.base_urls = self._load_base_urls()
+        self.backup_urls = self._load_backup_urls()
+        last_error = None
         for base_url in self.base_urls:
             if os.getenv("DEBUG") == "1":
                 print(f"Using VOICEVOX URL: {base_url}")
-            last_error = None
             for attempt in range(3):
                 try:
                     async with aiohttp.ClientSession() as session:
@@ -255,8 +333,54 @@ class VOICEVOXLib:
                     continue
                 except Exception as e:
                     logging.error(f"VOICEVOX synthesize_bytes unexpected error for URL {base_url}: {e}")
+                    last_error = e
                     break
-            # 3回とも失敗した場合のみ次のURLへ
+        # 通常サーバー全て失敗→バックアップサーバーで再試行
+        if self.backup_urls:
+            for backup_url in self.backup_urls:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        start_time = time.perf_counter()
+                        # Step 1: Generate audio query
+                        async with session.post(
+                            f"{backup_url}/audio_query",
+                            params={"text": text, "speaker": speaker_id}
+                        ) as query_response:
+                            query_response.raise_for_status()
+                            audio_query = await query_response.json()
+
+                        # Step 2: Synthesize audio
+                        async with session.post(
+                            f"{backup_url}/synthesis",
+                            params={"speaker": speaker_id},
+                            json=audio_query
+                        ) as synthesis_response:
+                            synthesis_response.raise_for_status()
+                            wav_bytes = await synthesis_response.read()
+
+                        try:
+                            with wave.open(io.BytesIO(wav_bytes), "rb") as wav_file:
+                                n_frames = wav_file.getnframes()
+                                framerate = wav_file.getframerate()
+                                duration_sec = n_frames / framerate if framerate else 0.0
+                                if duration_sec > 0:
+                                    seconds_per_minute = elapsed * 60.0 / duration_sec
+                                else:
+                                    seconds_per_minute = 0.0
+                                VOICE_GENERATION_TIME_PER_MINUTE.set(seconds_per_minute)
+                        except Exception:
+                            pass
+                        # SentryにINFOログ送信
+                        if sentry_sdk:
+                            sentry_sdk.capture_message(
+                                f"VOICEVOX backup server used: {backup_url} for text: {text[:50]}...",
+                                level="info"
+                        )
+                        return backup_url, wav_bytes
+                except Exception as e:
+                    logging.error(f"VOICEVOX backup synthesize_bytes failed for URL {backup_url}: {e}")
+                    last_error = e
+                    continue
         raise RuntimeError(f"All VOICEVOX URLs failed for synthesize_bytes: {text[:50]}... Last error: {last_error}")
 
 # Example usage:
