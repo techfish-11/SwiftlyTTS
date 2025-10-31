@@ -38,6 +38,19 @@ class AdminCog(commands.Cog):
         except ValueError:
             pass
 
+        if option == "setannounce":
+            # アナウンス内容をDBに保存または削除
+            try:
+                if value.strip().lower() == "delete":
+                    await self.db.delete_announce()
+                    await interaction.response.send_message("アナウンス内容を削除しました。", ephemeral=True)
+                else:
+                    await self.db.upsert_announce(value)
+                    await interaction.response.send_message(f"アナウンス内容を設定しました。\n内容: {value}", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"アナウンス設定中にエラー: {str(e)}", ephemeral=True)
+            return
+
         if option == "ban":
             await self.db.execute(
                 "INSERT INTO banlist (user_id) VALUES ($1) ON CONFLICT DO NOTHING", value_int
@@ -155,7 +168,7 @@ class AdminCog(commands.Cog):
 
         else:
             await interaction.response.send_message(
-                "無効なオプションです。'ban', 'unban', 'voice', 'warn' または 'bench' を指定してください。", ephemeral=True
+                "無効なオプションです。'ban', 'unban', 'voice', 'warn', 'bench', 'setannounce' を指定してください。", ephemeral=True
             )
 
 async def setup(bot: commands.Bot):
