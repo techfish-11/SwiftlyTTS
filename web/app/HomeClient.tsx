@@ -19,6 +19,9 @@ import {
   DialogContent,
   IconButton,
   Tooltip as MuiTooltip,
+  Fab,
+  Fade,
+  Paper,
 } from '@mui/material';
 import {
   Cloud,
@@ -33,6 +36,7 @@ import {
   SkipNext as SkipForward,
   Add as Plus,
   Close as CloseIcon,
+  Campaign as CampaignIcon,
 } from '@mui/icons-material';
 import theme from '../lib/theme';
 import { Line } from 'react-chartjs-2';
@@ -52,6 +56,10 @@ export default function Home() {
   const [serverCount, setServerCount] = useState<string>("Loading...");
   // Grafana モーダル制御
   const [grafanaOpen, setGrafanaOpen] = useState(false);
+  // アナウンスダイアログ制御
+  const [announceOpen, setAnnounceOpen] = useState(false);
+  // アナウンス吹き出し制御
+  const [showAnnounceBubble, setShowAnnounceBubble] = useState(false);
 
   const grafanaTarget = 'https://stats.sakana11.org/public-dashboards/68f9b3d55f43490c9d07c1daf1475f3c/';
   // we no longer embed Grafana iframe; use Prometheus querying instead
@@ -202,6 +210,71 @@ export default function Home() {
     { cmd: "/leave", title: "切断", desc: "ボイスチャンネルから退出", icon: <SkipBack /> },
     { cmd: "/speed", title: "速度調整", desc: "話す速度を設定", icon: <SkipForward /> },
   ];
+
+  const [announce, setAnnounce] = useState<string | null>(null);
+  const [announceUpdatedAt, setAnnounceUpdatedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/getannounce")
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.announce === "string" && data.announce.trim() !== "") {
+          setAnnounce(data.announce);
+          if (data.updated_at) {
+            setAnnounceUpdatedAt(data.updated_at);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // アナウンスがある場合、かつ1日以内の更新であれば5秒間吹き出しを表示
+  useEffect(() => {
+    if (announce && announceUpdatedAt) {
+      const now = new Date();
+      const updated = new Date(announceUpdatedAt);
+      const diffMs = now.getTime() - updated.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+      
+      // 24時間以内のアップデートのみ吹き出しを表示
+      if (diffHours < 24) {
+        setShowAnnounceBubble(true);
+        const timer = setTimeout(() => {
+          setShowAnnounceBubble(false);
+        }, 5000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [announce, announceUpdatedAt]);
+
+  // 相対時間を計算する関数
+  const getRelativeTime = (dateString: string): string => {
+    const now = new Date();
+    const updated = new Date(dateString);
+    const diffMs = now.getTime() - updated.getTime();
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+
+    if (diffSec < 60) {
+      return `${diffSec}秒前にアップデート`;
+    } else if (diffMin < 60) {
+      return `${diffMin}分前にアップデート`;
+    } else if (diffHour < 24) {
+      return `${diffHour}時間前にアップデート`;
+    } else if (diffDay < 30) {
+      return `${diffDay}日前にアップデート`;
+    } else {
+      const diffMonth = Math.floor(diffDay / 30);
+      if (diffMonth < 12) {
+        return `${diffMonth}ヶ月前にアップデート`;
+      } else {
+        const diffYear = Math.floor(diffMonth / 12);
+        return `${diffYear}年前にアップデート`;
+      }
+    }
+  };
 
   return (
     <ThemeProvider theme={theme}>
@@ -660,7 +733,88 @@ export default function Home() {
             </Box>
           </Container>
         </Box>
-            </Box>
-          </ThemeProvider>
-        );
-      }
+
+        {/* 画面右下のアナウンスボタン */}
+        {announce && (
+          <Box sx={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}>
+            {/* 吹き出し */}
+            <Fade in={showAnnounceBubble} timeout={300}>
+              <Paper
+                elevation={3}
+                sx={{
+                  position: 'absolute',
+                  bottom: 8,
+                  right: 72,
+                  p: 1.5,
+                  px: 2,
+                  bgcolor: 'info.main',
+                  color: 'info.contrastText',
+                  borderRadius: 2,
+                  maxWidth: 220,
+                  whiteSpace: 'nowrap',
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    top: '50%',
+                    right: -8,
+                    transform: 'translateY(-50%)',
+                    width: 0,
+                    height: 0,
+                    borderTop: '8px solid transparent',
+                    borderBottom: '8px solid transparent',
+                    borderLeft: theme => `8px solid ${theme.palette.info.main}`,
+                  },
+                }}
+              >
+                <Typography variant="caption" sx={{ fontWeight: 500, display: 'block', textAlign: 'center' }}>
+                  {announceUpdatedAt && getRelativeTime(announceUpdatedAt)}
+                </Typography>
+              </Paper>
+            </Fade>
+
+            {/* FAB本体 */}
+            <MuiTooltip title="お知らせを見る" placement="left">
+              <Fab
+                color="info"
+                aria-label="announcement"
+                onClick={() => setAnnounceOpen(true)}
+              >
+                <CampaignIcon />
+              </Fab>
+            </MuiTooltip>
+          </Box>
+        )}
+
+        {/* アナウンスダイアログ */}
+        <Dialog
+          open={announceOpen}
+          onClose={() => setAnnounceOpen(false)}
+          maxWidth="sm"
+          fullWidth
+          aria-labelledby="announce-dialog-title"
+        >
+          <DialogTitle id="announce-dialog-title" sx={{ pr: 5, bgcolor: 'info.light', color: 'info.contrastText' }}>
+            お知らせ
+            {announceUpdatedAt && (
+              <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.9 }}>
+                {getRelativeTime(announceUpdatedAt)}
+              </Typography>
+            )}
+            <IconButton
+              aria-label="close"
+              onClick={() => setAnnounceOpen(false)}
+              sx={{ position: 'absolute', right: 8, top: 8, color: 'info.contrastText' }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 3 }}>
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+              {announce}
+            </Typography>
+          </DialogContent>
+        </Dialog>
+      </Box>
+    </ThemeProvider>
+  );
+}

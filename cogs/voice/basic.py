@@ -241,36 +241,17 @@ class VoiceReadCog(commands.Cog):
 
             self.bot.loop.create_task(play_connection_message())
 
-            # 高負荷時間帯判定・通知文生成
-            from datetime import datetime, time as dtime
-            import pytz
-            jst = pytz.timezone("Asia/Tokyo")
-            now = datetime.now(jst).time()
-            extra_msg = ""
-            high_load_time = getattr(self.bot, "config", {}).get("high_load_time")
-            in_high_load = False
-            if high_load_time:
-                try:
-                    start_str, end_str = high_load_time.split("-")
-                    start_h, start_m = map(int, start_str.split(":"))
-                    end_h, end_m = map(int, end_str.split(":"))
-                    start = dtime(start_h, start_m)
-                    end = dtime(end_h, end_m)
-                    if start <= end:
-                        in_high_load = start <= now < end
-                    else:
-                        in_high_load = now >= start or now < end
-                    if in_high_load:
-                        extra_msg = f"\n高負荷時間帯（{high_load_time}）につき一時的に声がずんだもんになります"
-                except Exception:
-                    pass
+            # アナウンス内容をDBから取得して表示
+            announce_text = await self.db.get_announce()
+            if announce_text:
+                announce_display = f"アナウンス：{announce_text}"
+            else:
+                announce_display = ""
             embed = discord.Embed(
                 title="接続完了",
-                description=f"{channel.name}に接続しました。\n\nサポートサーバー: https://discord.gg/mNDvAYayp5{extra_msg}",
+                description=f"{channel.name}に接続しました。\n\n{announce_display}",
                 color=discord.Color.blue()
             )
-            embed.set_footer(text="Hosted by sakana11.org")
-            # defer しているので followup を使って送信
             await interaction.followup.send(embed=embed)
         else:
             embed = discord.Embed(

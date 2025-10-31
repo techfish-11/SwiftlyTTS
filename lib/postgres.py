@@ -18,6 +18,29 @@ else:
 print(f"Connecting to DB at {DB_HOST}:{DB_PORT} as {DB_USER} to {DB_NAME} (SSL: {DB_SSL})")
 
 class PostgresDB:
+    async def upsert_announce(self, announce: str) -> None:
+        """アナウンス内容をセット(上書き)し、更新時刻を記録する"""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                """
+                INSERT INTO announce_config (id, announce, updated_at)
+                VALUES (1, $1, now())
+                ON CONFLICT (id) DO UPDATE SET announce = $1, updated_at = now()
+                """,
+                announce
+            )
+
+    async def get_announce(self) -> Optional[dict]:
+        """アナウンス内容と更新時刻を取得する。未設定ならNone"""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            row = await connection.fetchrow(
+                "SELECT announce, updated_at FROM announce_config WHERE id = 1"
+            )
+            return {"announce": row["announce"], "updated_at": row["updated_at"]} if row else None
     """PostgreSQL database management class using asyncpg"""
 
     def __init__(self) -> None:
@@ -81,6 +104,11 @@ class PostgresDB:
                     value TEXT NOT NULL,
                     PRIMARY KEY (user_id, key)
                 );
+                CREATE TABLE IF NOT EXISTS announce_config (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    announce TEXT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
             """)
             # user_voice.speaker_id の型がintegerならtextにマイグレート
             col_info = await connection.fetchrow("""
@@ -100,6 +128,15 @@ class PostgresDB:
                 """)
                 await connection.execute("""
                     ALTER TABLE user_voice RENAME COLUMN speaker_id_text TO speaker_id;
+                """)
+
+            col_exists = await connection.fetchrow("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'announce_config' AND column_name = 'updated_at'
+            """)
+            if not col_exists:
+                await connection.execute("""
+                    ALTER TABLE announce_config ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
                 """)
 
     async def close(self) -> None:
@@ -322,4 +359,13 @@ class PostgresDB:
         async with self._pool.acquire() as connection:
             return await connection.fetch(
                 "SELECT key, value FROM user_dictionary WHERE user_id = $1", user_id
+            )
+
+    async def delete_announce(self) -> None:
+        """アナウンス内容を削除する"""
+        if not self._pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self._pool.acquire() as connection:
+            await connection.execute(
+                "DELETE FROM announce_config WHERE id = 1"
             )
