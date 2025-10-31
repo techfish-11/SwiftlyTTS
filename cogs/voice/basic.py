@@ -242,7 +242,14 @@ class VoiceReadCog(commands.Cog):
             self.bot.loop.create_task(play_connection_message())
 
             # アナウンス内容をDBから取得して表示
-            announce_text = await self.db.get_announce()
+            announce_data = await self.db.get_announce()
+            if announce_data and isinstance(announce_data, dict):
+                announce_text = announce_data.get('announce', '')
+            elif announce_data:
+                announce_text = str(announce_data)
+            else:
+                announce_text = ""
+            
             if announce_text:
                 announce_display = f"アナウンス：{announce_text}"
             else:
@@ -336,9 +343,23 @@ class VoiceReadCog(commands.Cog):
                     tts_channel = guild.get_channel(tts_channel_id)
                     if tts_channel:
                         try:
+                            # アナウンス内容をDBから取得
+                            announce_data = await self.db.get_announce()
+                            if announce_data and isinstance(announce_data, dict):
+                                announce_text = announce_data.get('announce', '')
+                            elif announce_data:
+                                announce_text = str(announce_data)
+                            else:
+                                announce_text = ""
+                        
+                            if announce_text:
+                                announce_display = f"\n\nアナウンス：{announce_text}"
+                            else:
+                                announce_display = ""
+                        
                             notify_embed = discord.Embed(
                                 title="自動接続",
-                                description=f"自動参加が有効になったため、Botが {vc_channel.name} に参加しました。",
+                                description=f"自動参加が有効になったため、Botが {vc_channel.name} に参加しました。{announce_display}",
                                 color=discord.Color.green()
                             )
                             await tts_channel.send(embed=notify_embed)
@@ -733,9 +754,23 @@ class VoiceReadCog(commands.Cog):
                                     try:
                                         tts_channel = guild.get_channel(cfg[1])
                                         if tts_channel:
+                                            # アナウンス内容をDBから取得
+                                            announce_data = await self.db.get_announce()
+                                            if announce_data and isinstance(announce_data, dict):
+                                                announce_text = announce_data.get('announce', '')
+                                            elif announce_data:
+                                                announce_text = str(announce_data)
+                                            else:
+                                                announce_text = ""
+                                            
+                                            if announce_text:
+                                                announce_display = f"\n\nアナウンス：{announce_text}"
+                                            else:
+                                                announce_display = ""
+                                            
                                             embed = discord.Embed(
                                                 title="自動接続",
-                                                description=f"{member.display_name} が {after.channel.name} に参加したため、Botが自動で参加しました。",
+                                                description=f"{member.display_name} が {after.channel.name} に参加したため、Botが自動で参加しました。{announce_display}",
                                                 color=discord.Color.green()
                                             )
                                             await tts_channel.send(embed=embed)

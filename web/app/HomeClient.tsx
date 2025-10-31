@@ -276,6 +276,33 @@ export default function Home() {
     }
   };
 
+  // URLをリンクに変換する関数
+  const renderTextWithLinks = (text: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = text.split(urlRegex);
+    
+    return parts.map((part, index) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={index}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: 'inherit',
+              textDecoration: 'underline',
+              fontWeight: 500,
+            }}
+          >
+            {part}
+          </a>
+        );
+      }
+      return <React.Fragment key={index}>{part}</React.Fragment>;
+    });
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -809,8 +836,8 @@ export default function Home() {
             </IconButton>
           </DialogTitle>
           <DialogContent dividers sx={{ p: 3 }}>
-            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
-              {announce}
+            <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {announce && renderTextWithLinks(announce)}
             </Typography>
           </DialogContent>
         </Dialog>
