@@ -622,7 +622,10 @@ class VoiceReadCog(commands.Cog):
                 if item is None:
                     await asyncio.sleep(0.1)
                     continue
-                text, speaker_id = item
+                text, speaker_id, user_name = item
+                # 深夜帯（ずんだもん）の場合、ユーザー名を先頭に追加
+                if speaker_id == 3:
+                    text = f"{user_name}、{text}"
                 voice_client = guild.voice_client
                 # ボイスチャンネル未接続の場合はスキップ
                 if not voice_client or not voice_client.is_connected():
@@ -707,7 +710,7 @@ class VoiceReadCog(commands.Cog):
 
         # ユーザーのスピーカーIDを取得
         speaker_id = await self.get_user_speaker_id(message.author.id)
-        self.rust_queue.add(message.guild.id, tts_text, speaker_id)  # Rustキューに追加
+        self.rust_queue.add(message.guild.id, tts_text, speaker_id, message.author.display_name)  # Rustキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)
 
@@ -850,7 +853,7 @@ class VoiceReadCog(commands.Cog):
                 return
 
             # メッセージをRustキューに追加（システム音声はスピーカーIDを1に固定）
-            self.rust_queue.add(guild.id, msg, self.speaker_id)
+            self.rust_queue.add(guild.id, msg, self.speaker_id, "")
             # ここでプロセスタスクが存在しなければ作成する
             if guild.id not in self.queue_tasks or self.queue_tasks[guild.id].done():
                 self.queue_tasks[guild.id] = self.bot.loop.create_task(self.process_queue(guild.id))
