@@ -5,23 +5,23 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 type GuildId = u64;
-type QueueItem = (String, u64); // (text, speaker_id)
+type QueueItem = (String, u64, String); // (text, speaker_id, user_name)
 
 static QUEUES: Lazy<Mutex<HashMap<GuildId, VecDeque<QueueItem>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[pyfunction]
-fn add_to_queue(guild_id: u64, text: String, speaker_id: u64) {
+fn add_to_queue(guild_id: u64, text: String, speaker_id: u64, user_name: String) {
     let mut queues = QUEUES.lock().unwrap();
     let queue = queues.entry(guild_id).or_insert_with(VecDeque::new);
-    queue.push_back((text, speaker_id));
+    queue.push_back((text, speaker_id, user_name));
 }
 
 #[pyfunction]
 fn get_next(py: Python, guild_id: u64) -> PyResult<PyObject> {
     let mut queues = QUEUES.lock().unwrap();
     if let Some(queue) = queues.get_mut(&guild_id) {
-        if let Some((text, speaker_id)) = queue.pop_front() {
-            let tuple = PyTuple::new(py, &[text.into_py(py), speaker_id.into_py(py)])?;
+        if let Some((text, speaker_id, user_name)) = queue.pop_front() {
+            let tuple = PyTuple::new(py, &[text.into_py(py), speaker_id.into_py(py), user_name.into_py(py)])?;
             return Ok(tuple.into_py(py));
         }
     }

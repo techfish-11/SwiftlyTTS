@@ -1,15 +1,15 @@
 import rust_queue
 
 class RustQueueClient:
-    def add(self, guild_id: int, text: str, speaker_id: int) -> None:
+    def add(self, guild_id: int, text: str, speaker_id: int, user_name: str) -> None:
         print(f"Adding to Rust queue")
-        rust_queue.add_to_queue(guild_id, text, speaker_id)
+        rust_queue.add_to_queue(guild_id, text, speaker_id, user_name)
 
     def get_next(self, guild_id: int):
         result = rust_queue.get_next(guild_id)
         if result is not None:
-            text, speaker_id = result
-            return text, speaker_id
+            text, speaker_id, user_name = result
+            return text, speaker_id, user_name
         return None
 
     def clear(self, guild_id: int) -> None:
