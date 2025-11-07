@@ -430,6 +430,8 @@ class VoiceReadCog(commands.Cog):
                 await asyncio.sleep(0.5)
             # 読み上げ成功時にカウンターをインクリメント
             self.bot.tts_counter += 1
+            shard_id = interaction.guild.shard_id
+            self.bot.shard_tts_counters[shard_id] += 1
         try:
             if saved_path and os.path.exists(saved_path):
                 os.remove(saved_path)
@@ -644,6 +646,8 @@ class VoiceReadCog(commands.Cog):
                     self.logger.error(f"TTS synth failed for guild {guild_id}: {e}")
                     traceback.print_exc()
                     self.bot.error_counter += 1  # エラーカウンターをインクリメント
+                    shard_id = guild.shard_id
+                    self.bot.shard_error_counters[shard_id] += 1
                     continue
                 if not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(saved_path)
@@ -652,6 +656,8 @@ class VoiceReadCog(commands.Cog):
                         await asyncio.sleep(0.5)
                     # 読み上げ成功時にカウンターをインクリメント
                     self.bot.tts_counter += 1
+                    shard_id = guild.shard_id
+                    self.bot.shard_tts_counters[shard_id] += 1
                 try:
                     if saved_path and os.path.exists(saved_path):
                         os.remove(saved_path)
@@ -663,6 +669,8 @@ class VoiceReadCog(commands.Cog):
                 self.logger.error(f"Error in process_queue for guild {guild_id}: {e}")
                 traceback.print_exc()
                 self.bot.error_counter += 1  # エラーカウンターをインクリメント
+                shard_id = guild.shard_id
+                self.bot.shard_error_counters[shard_id] += 1
                 continue  # その他のエラーは無視して次のメッセージへ
             await asyncio.sleep(0.1)  # 少し待機して次のメッセージへ
 
