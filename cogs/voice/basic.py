@@ -625,17 +625,15 @@ class VoiceReadCog(commands.Cog):
                     await asyncio.sleep(0.1)
                     continue
                 text, speaker_id, user_name = item
-                # 深夜帯（ずんだもん）の場合、ユーザー名を先頭に追加
-                if speaker_id == 3:
-                    text = f"{user_name}、{text}"
-                voice_client = guild.voice_client
-                # ボイスチャンネル未接続の場合はスキップ
-                if not voice_client or not voice_client.is_connected():
-                    continue
                 # テキストを辞書で変換
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
                 if dictionary_cog:
                     text = await dictionary_cog.apply_dictionary(text, guild_id)
+                # ずんだもんの場合、ユーザー名も辞書変換して先頭に追加
+                if speaker_id == 3:
+                    if dictionary_cog:
+                        user_name = await dictionary_cog.apply_dictionary(user_name, guild_id)
+                    text = f"{user_name}、{text}"
                 tmp_wav = f"tmp_{uuid.uuid4()}_queue.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
                 speed = await self.db.get_server_voice_speed(guild_id)
                 if speed is None:
