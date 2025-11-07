@@ -20,6 +20,7 @@ from lib.postgres import PostgresDB  # PostgresDBクラスをインポート
 import threading
 import uvicorn
 from lib.bot_http_server import app as bot_http_app, set_bot
+import aiohttp
 
 load_dotenv()
 
@@ -72,6 +73,12 @@ async def load_all_cogs():
 
 db = PostgresDB()  # データベースクラスのインスタンスを作成
 
+async def patch_discord_aiohttp_limit(bot):
+    connector = aiohttp.TCPConnector(limit=0)
+    session = aiohttp.ClientSession(connector=connector)
+    if hasattr(bot.http, "_HTTPClient__session"):
+        bot.http._HTTPClient__session = session
+
 async def update_rpc_task():
     while True:
         try:
@@ -111,6 +118,7 @@ async def restart_rpc_task():
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user}')
+    await patch_discord_aiohttp_limit(bot)
 
     # データベース接続テスト
     print("Testing database connection...")
