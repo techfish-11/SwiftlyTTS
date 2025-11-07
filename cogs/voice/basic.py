@@ -647,7 +647,8 @@ class VoiceReadCog(commands.Cog):
                     shard_id = guild.shard_id
                     self.bot.shard_error_counters[shard_id] += 1
                     continue
-                if not voice_client.is_playing():
+                voice_client = guild.voice_client
+                if voice_client and not voice_client.is_playing():
                     audio_source = discord.FFmpegPCMAudio(saved_path)
                     voice_client.play(audio_source)
                     while voice_client.is_playing():
