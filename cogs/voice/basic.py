@@ -220,7 +220,7 @@ class VoiceReadCog(commands.Cog):
             # 「接続しました。」と喋る処理を非同期で実行
             async def play_connection_message():
                 tmp_wav = f"tmp_{uuid.uuid4()}_join.wav"  # UUIDを使用（要求するファイル名だが実際の保存先はライブラリが返す）
-                user_speaker_id = await self.get_user_speaker_id(interaction.user.id)
+                user_speaker_id = await self.get_user_speaker_id(interaction.user.id, interaction.guild.id)
                 try:
                     saved_path = await self.voicelib.synthesize("接続しました。", user_speaker_id, tmp_wav)
                 except Exception:
@@ -588,30 +588,46 @@ class VoiceReadCog(commands.Cog):
         await self.db.set_server_voice_speed(interaction.guild.id, speed)
         await interaction.response.send_message(f"サーバー全体の読み上げスピードを{speed}に設定しました。", ephemeral=False)
 
-    async def get_user_speaker_id(self, user_id: int) -> int:
+    async def get_user_speaker_id(self, user_id: int, guild_id: int = None) -> int:
         """ユーザーのスピーカーIDを取得（高負荷時間帯はconfigで制御）"""
         from datetime import datetime, time as dtime
         import pytz
         jst = pytz.timezone("Asia/Tokyo")
         now = datetime.now(jst).time()
         # 設定取得
-        high_load_time = getattr(self.bot, "config", {}).get("high_load_time")
-        if high_load_time:
-            try:
-                start_str, end_str = high_load_time.split("-")
-                start_h, start_m = map(int, start_str.split(":"))
-                end_h, end_m = map(int, end_str.split(":"))
-                start = dtime(start_h, start_m)
-                end = dtime(end_h, end_m)
-                # 例: 22:00-03:00 の場合
-                if start <= end:
-                    in_range = start <= now < end
-                else:
-                    in_range = now >= start or now < end
-                if in_range:
-                    return 3  # ずんだもんID
-            except Exception:
-                pass  # 設定不正時は通常通り
+        config = getattr(self.bot, "config", {})
+        high_load_time = config.get("high_load_time")
+        high_load_time_voice_switch = config.get("high_load_time_voice_switch", True)
+        high_load_time_voice_switch_guild_threshold_enabled = config.get("high_load_time_voice_switch_guild_threshold_enabled", False)
+        high_load_time_voice_switch_guild_threshold = int(config.get("high_load_time_voice_switch_guild_threshold", 0))
+        guild = None
+        if guild_id:
+            guild = self.bot.get_guild(guild_id)
+        else:
+            for g in self.bot.guilds:
+                if g.get_member(user_id):
+                    guild = g
+                    break
+        guild_member_count = guild.member_count if guild else 0
+        if high_load_time and str(high_load_time_voice_switch).lower() == "true":
+            # ギルド人数閾値判定
+            if high_load_time_voice_switch_guild_threshold_enabled and guild_member_count >= high_load_time_voice_switch_guild_threshold:
+                pass  # 強制変更しない
+            else:
+                try:
+                    start_str, end_str = high_load_time.split("-")
+                    start_h, start_m = map(int, start_str.split(":"))
+                    end_h, end_m = map(int, end_str.split(":"))
+                    start = dtime(start_h, start_m)
+                    end = dtime(end_h, end_m)
+                    if start <= end:
+                        in_range = start <= now < end
+                    else:
+                        in_range = now >= start or now < end
+                    if in_range:
+                        return 3  # ずんだもんID
+                except Exception:
+                    pass  # 設定不正時は通常通り
         row = await self.db.fetchrow("SELECT speaker_id FROM user_voice WHERE user_id = $1", user_id)
         return int(row['speaker_id']) if row else self.speaker_id  # デフォルトはself.speaker_id
 
@@ -716,7 +732,7 @@ class VoiceReadCog(commands.Cog):
                     tts_text = f"{image_count}枚の画像"
 
         # ユーザーのスピーカーIDを取得
-        speaker_id = await self.get_user_speaker_id(message.author.id)
+        speaker_id = await self.get_user_speaker_id(message.author.id, message.guild.id)
         self.rust_queue.add(message.guild.id, tts_text, speaker_id, message.author.display_name)  # Rustキューに追加
         # コマンドの処理も継続
         await self.bot.process_commands(message)

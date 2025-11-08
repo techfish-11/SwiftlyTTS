@@ -5,4 +5,10 @@ prefix: "s?"
 # ここに高負荷時間帯を設定します
 #
 # 時間帯を設定すると、その時間帯に声が強制的にずんだもんに変更されます。
-high_load_time: "22:00-02:00"
+# high_load_time_voice_switchがtrueの場合に有効です。
+high_load_time: "22:00-03:00"
+high_load_time_voice_switch: true
+
+# 高負荷時間帯でもギルド人数が閾値以上ならボイス変更しない
+high_load_time_voice_switch_guild_threshold_enabled: false  # trueで有効化
+high_load_time_voice_switch_guild_threshold: 100  # 何人以上なら強制変更しない
