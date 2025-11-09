@@ -645,8 +645,10 @@ class VoiceReadCog(commands.Cog):
                 dictionary_cog = self.bot.get_cog("DictionaryCog")
                 if dictionary_cog:
                     text = await dictionary_cog.apply_dictionary(text, guild_id)
-                # ずんだもんの場合、ユーザー名も辞書変換して先頭に追加
-                if speaker_id == 3:
+                # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
+                config = getattr(self.bot, "config", {})
+                zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", True)
+                if speaker_id == 3 and zundamon_read_username_enabled:
                     if dictionary_cog:
                         user_name = await dictionary_cog.apply_dictionary(user_name, guild_id)
                     text = f"{user_name}、{text}"
