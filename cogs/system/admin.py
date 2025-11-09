@@ -182,7 +182,7 @@ class AdminCog(commands.Cog):
 
         else:
             await interaction.response.send_message(
-                "無効なオプションです。'ban', 'unban', 'voice', 'warn', 'bench', 'setannounce' を指定してください。", ephemeral=True
+                "無効なオプションです。'ban', 'unban', 'voice', 'warn', 'bench', 'setannounce', 'config' を指定してください。", ephemeral=True
             )
 
 async def setup(bot: commands.Bot):
