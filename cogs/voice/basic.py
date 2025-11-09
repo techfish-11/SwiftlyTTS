@@ -599,7 +599,10 @@ class VoiceReadCog(commands.Cog):
         high_load_time = config.get("high_load_time")
         high_load_time_voice_switch = config.get("high_load_time_voice_switch", True)
         high_load_time_voice_switch_guild_threshold_enabled = config.get("high_load_time_voice_switch_guild_threshold_enabled", False)
-        high_load_time_voice_switch_guild_threshold = int(config.get("high_load_time_voice_switch_guild_threshold", 0))
+        try:
+            high_load_time_voice_switch_guild_threshold = int(config.get("high_load_time_voice_switch_guild_threshold", 0))
+        except (ValueError, TypeError):
+            high_load_time_voice_switch_guild_threshold = 0
         guild = None
         if guild_id:
             guild = self.bot.get_guild(guild_id)
