@@ -647,7 +647,7 @@ class VoiceReadCog(commands.Cog):
                     text = await dictionary_cog.apply_dictionary(text, guild_id)
                 # ずんだもんの場合、configでユーザー名読み上げ有効なら先頭に追加
                 config = getattr(self.bot, "config", {})
-                zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", True)
+                zundamon_read_username_enabled = config.get("zundamon_read_username_enabled", False)
                 if speaker_id == 3 and zundamon_read_username_enabled:
                     if dictionary_cog:
                         user_name = await dictionary_cog.apply_dictionary(user_name, guild_id)
