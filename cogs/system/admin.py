@@ -174,7 +174,8 @@ class AdminCog(commands.Cog):
                     config_data = yaml.safe_load(f)
                 # prefixはリロードしない
                 config_data.pop("prefix", None)
-                self.bot.config = config_data
+                # 既存のself.bot.configの値を保持しつつ、config_dataの値のみ上書き
+                self.bot.config.update(config_data)
                 await interaction.response.send_message("config.ymlをリロードしました。", ephemeral=True)
             except Exception as e:
                 await interaction.response.send_message(f"configリロード失敗: {str(e)}", ephemeral=True)
