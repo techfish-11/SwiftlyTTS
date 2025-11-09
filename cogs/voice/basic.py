@@ -604,10 +604,10 @@ class VoiceReadCog(commands.Cog):
         if guild_id:
             guild = self.bot.get_guild(guild_id)
         else:
-            for g in self.bot.guilds:
-                if g.get_member(user_id):
-                    guild = g
-                    break
+            logging.warning(f"get_user_speaker_id called without guild_id for user {user_id}. This is not supported and may cause incorrect behavior.")
+            # Optionally, raise an exception to enforce contract:
+            # raise ValueError("guild_id must be provided to get_user_speaker_id")
+            # guild remains None
         guild_member_count = guild.member_count if guild else 0
         if high_load_time and high_load_time_voice_switch:
             # ギルド人数閾値判定
