@@ -609,7 +609,7 @@ class VoiceReadCog(commands.Cog):
                     guild = g
                     break
         guild_member_count = guild.member_count if guild else 0
-        if high_load_time and str(high_load_time_voice_switch).lower() == "true":
+        if high_load_time and high_load_time_voice_switch:
             # ギルド人数閾値判定
             if high_load_time_voice_switch_guild_threshold_enabled and guild_member_count >= high_load_time_voice_switch_guild_threshold:
                 pass  # 強制変更しない
