@@ -166,9 +166,24 @@ class AdminCog(commands.Cog):
             except Exception as e:
                 await interaction.followup.send(f"ベンチマーク中にエラーが発生しました: {str(e)}", ephemeral=True)  # 変更: followup で送信
 
+        elif option == "config" and value.strip().lower() == "reload":
+            # prefix以外のconfigをリロード
+            import yaml
+            try:
+                with open("config.yml", "r", encoding="utf-8") as f:
+                    config_data = yaml.safe_load(f)
+                # prefixはリロードしない
+                config_data.pop("prefix", None)
+                # 既存のself.bot.configの値を保持しつつ、config_dataの値のみ上書き
+                self.bot.config.update(config_data)
+                await interaction.response.send_message("config.ymlをリロードしました。", ephemeral=True)
+            except Exception as e:
+                await interaction.response.send_message(f"configリロード失敗: {str(e)}", ephemeral=True)
+            return
+
         else:
             await interaction.response.send_message(
-                "無効なオプションです。'ban', 'unban', 'voice', 'warn', 'bench', 'setannounce' を指定してください。", ephemeral=True
+                "無効なオプションです。'ban', 'unban', 'voice', 'warn', 'bench', 'setannounce', 'config' を指定してください。", ephemeral=True
             )
 
 async def setup(bot: commands.Bot):
