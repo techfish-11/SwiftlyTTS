@@ -44,11 +44,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid speaker_id" }, { status: 400 });
     }
 
-    await pool.query(
-        `INSERT INTO user_voice (user_id, speaker_id) VALUES ($1, $2)
-     ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2`,
-        [userId, String(speaker_id)]
-    );
+    try {
+        await pool.query(
+            `INSERT INTO user_voice (user_id, speaker_id) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE SET speaker_id = $2`,
+            [userId, String(speaker_id)]
+        );
+    } catch (error) {
+        console.error("Database error in user-voice POST:", error);
+        return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
 
     // ボット側HTTPサーバーに通知（失敗しても無視）
     try {
