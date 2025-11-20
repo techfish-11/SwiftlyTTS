@@ -12,6 +12,7 @@ import Paper from "@mui/material/Paper";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
@@ -25,6 +26,7 @@ import Divider from "@mui/material/Divider";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import Chip from "@mui/material/Chip";
+import { SPEAKER_LIST } from "@/lib/speakers";
 
 type UserDictionaryEntry = { key: string; value: string };
 type Guild = { id: string; name: string };
@@ -40,16 +42,22 @@ export default function DashboardClient() {
   // ギルド辞書管理用state
   const [guilds, setGuilds] = useState<Guild[]>([]);
   const [guildsLoading, setGuildsLoading] = useState(false);
-  const [guildsError, setGuildsError] = useState<string|null>(null);
+  const [guildsError, setGuildsError] = useState<string | null>(null);
   const [guildsPolling, setGuildsPolling] = useState(false);
   const [selectedGuild, setSelectedGuild] = useState<string>("");
   const [guildDictionary, setGuildDictionary] = useState<UserDictionaryEntry[]>([]);
   const [guildDictKey, setGuildDictKey] = useState("");
   const [guildDictValue, setGuildDictValue] = useState("");
-  const [guildDictEditKey, setGuildDictEditKey] = useState<string|null>(null);
+  const [guildDictEditKey, setGuildDictEditKey] = useState<string | null>(null);
   const [guildDictEditValue, setGuildDictEditValue] = useState("");
   const [guildDictLoading, setGuildDictLoading] = useState(false);
-  const [guildDictError, setGuildDictError] = useState<string|null>(null);
+  const [guildDictError, setGuildDictError] = useState<string | null>(null);
+
+  // ユーザーボイス設定用state
+  const [selectedVoice, setSelectedVoice] = useState<number | null>(null);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [playingVoice, setPlayingVoice] = useState<number | null>(null);
   // ユーザーの所属ギルド一覧取得（ポーリング対応）
   const fetchGuilds = React.useCallback(async (force?: boolean) => {
     setGuildsLoading(true);
@@ -121,10 +129,10 @@ export default function DashboardClient() {
   const [userDictionary, setUserDictionary] = useState<UserDictionaryEntry[]>([]);
   const [dictKey, setDictKey] = useState("");
   const [dictValue, setDictValue] = useState("");
-  const [dictEditKey, setDictEditKey] = useState<string|null>(null);
+  const [dictEditKey, setDictEditKey] = useState<string | null>(null);
   const [dictEditValue, setDictEditValue] = useState("");
   const [dictLoading, setDictLoading] = useState(false);
-  const [dictError, setDictError] = useState<string|null>(null);
+  const [dictError, setDictError] = useState<string | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   // ユーザー辞書取得
@@ -142,6 +150,66 @@ export default function DashboardClient() {
     }
   };
 
+  // ユーザーボイス設定取得
+  const fetchUserVoice = async () => {
+    setVoiceLoading(true);
+    setVoiceError(null);
+    try {
+      const res = await fetch("/api/user-voice");
+      const data = await res.json();
+      if (data.speaker_id !== null) {
+        setSelectedVoice(parseInt(data.speaker_id));
+      }
+    } catch {
+      setVoiceError("ボイス設定の取得に失敗しました");
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  // ユーザーボイス設定更新
+  const handleVoiceChange = async (speakerId: number) => {
+    setVoiceLoading(true);
+    setVoiceError(null);
+    try {
+      const res = await fetch("/api/user-voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ speaker_id: speakerId }),
+      });
+      if (!res.ok) throw new Error();
+      setSelectedVoice(speakerId);
+    } catch {
+      setVoiceError("ボイス設定の更新に失敗しました");
+    } finally {
+      setVoiceLoading(false);
+    }
+  };
+
+  // ボイスサンプル再生
+  const playVoiceSample = async (speakerId: number, event: React.MouseEvent) => {
+    event.stopPropagation(); // Chipのクリックイベントを止める
+
+    if (playingVoice === speakerId) {
+      return; // 既に再生中
+    }
+
+    setPlayingVoice(speakerId);
+    try {
+      const audio = new Audio(`/api/voice-sample/${speakerId}`);
+      audio.onended = () => setPlayingVoice(null);
+      audio.onerror = () => {
+        setPlayingVoice(null);
+        setVoiceError("サンプル音声の再生に失敗しました");
+      };
+      await audio.play();
+    } catch (error) {
+      setPlayingVoice(null);
+      setVoiceError("サンプル音声の再生に失敗しました");
+    }
+  };
+
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/auth/signin");
@@ -151,6 +219,7 @@ export default function DashboardClient() {
   useEffect(() => {
     if (status === "authenticated") {
       fetchUserDictionary();
+      fetchUserVoice();
       fetchGuilds();
       // サーバー数取得
       fetch("/api/servercount", { credentials: "include" })
@@ -589,6 +658,61 @@ export default function DashboardClient() {
                   </TableBody>
                 </Table>
               </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ユーザーボイス設定カード */}
+        <Card elevation={0} sx={{ border: 1, borderColor: "divider", mb: 4 }}>
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 500, mb: 0.5 }}>
+              ボイス設定
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              読み上げに使用する声を選択します。
+              再生ボタンでサンプル音声が再生できます。
+            </Typography>
+
+            {voiceError && (
+              <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: "#fdecea", border: 1, borderColor: "#f5c6cb" }}>
+                <Typography variant="body2" color="error">{voiceError}</Typography>
+              </Paper>
+            )}
+
+            {voiceLoading ? (
+              <Typography>読み込み中…</Typography>
+            ) : (
+              <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}>
+                {SPEAKER_LIST.map((speaker) => (
+                  <Chip
+                    key={speaker.id}
+                    label={
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <span>{speaker.name}</span>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => playVoiceSample(speaker.id, e)}
+                          disabled={playingVoice === speaker.id}
+                          sx={{
+                            p: 0.25,
+                            ml: 0.5,
+                            "&:hover": { bgcolor: "rgba(0,0,0,0.1)" },
+                          }}
+                        >
+                          <PlayArrowIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+                    }
+                    onClick={() => handleVoiceChange(speaker.id)}
+                    color={selectedVoice === speaker.id ? "primary" : "default"}
+                    variant={selectedVoice === speaker.id ? "filled" : "outlined"}
+                    sx={{
+                      cursor: "pointer",
+                      fontWeight: selectedVoice === speaker.id ? 600 : 400,
+                    }}
+                  />
+                ))}
+              </Box>
             )}
           </CardContent>
         </Card>
