@@ -35,7 +35,8 @@ intents.message_content = True
 bot = commands.AutoShardedBot(
     command_prefix=config["prefix"],
     shard_count=SHARD_COUNT,  # 環境変数から取得したシャード数を使用
-    intents=intents
+    intents=intents,
+    help_command=None
 )
 bot.config = config  # 追加: 設定をbotインスタンスに保持
     
